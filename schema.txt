@@ -1,0 +1,216 @@
+Table role {
+  id UUID [primary key]
+  name varchar [not null]
+  description varchar
+  permissionIds array [ref: > permission.id]
+  created_at timestamp
+  updated_at timestamp
+  deleted_at timestamp
+}
+
+Table permission{
+  id UUID [primary key]
+  method varchar 
+  base_url varchar
+  path varchar
+  action_name varchar
+  description varchar
+  created_at timestamp
+  updated_at timestamp
+  deleted_at timestamp
+ }
+
+ Table user{
+  id UUID [primary key]
+  email varchar [unique, not null]
+  mobileNo varchar [unique, not null]
+  name varchar [not null]
+  password varchar [not null]
+  roleId UUID [ref: > role.id]
+  created_by UUID [ref: >user.id]
+  profileStatus enum('Active', 'Inactive', 'blocked') [not null]
+  tokenVersion Number [not null]
+  passwordChangedAt timestamp
+  createdAt timestamp
+  updatedAt timestamp
+  deletedAt timestamp
+ }
+
+Table batch{
+  id UUID [primary key]
+  name varchar [not null]
+  // courseIds UUID [ref: > course.id]
+  startDate datetime
+  endDate datetime
+  status enum('upcoming', 'ongoing', 'completed')
+}
+
+Table student{
+  id UUID [primary key]
+  enrollementNo varchar [unique, not null]
+  userId varchar [ref: > user.id]
+  educationQualification varchar 
+  dob date [not null]
+  gender varchar
+  profilePic varchar 
+  resume varchar
+  instituteName varchar
+  batchId UUID [ref: > batch.id]
+  currentStreak Number 
+  maxStreak Number
+  totalPoints Number
+  gitHubUrl varchar
+  linkedInUrl varchar
+  enrolledCourseIds array [ref: > course.id] 
+}
+
+Table instructor{
+  id UUID [primary key]
+  userId UUID [ref: > user.id]
+  linkedInUrl varchar [ref: > user.id]
+  ratingSum Number
+  ratingCount Number
+}
+
+Table course {
+  id UUID [primary key]
+  name varchar [not null]
+  instructorIds UUID [ref: > instructor.id]
+}
+
+Table session{
+  id UUID [primary key]
+  title varchar [not null]
+  notes varchar 
+  recordingUrl varchar 
+  // assignment varchar
+  courseId UUID [ref: > course.id]
+  instructorId UUID [ref: > instructor.id]
+  // feedbackId UUID [ref: > sessionFeedback.id]
+  meetUrl varchar
+  sessionDateAndTime datetime
+  duration varchar
+  status enum('scheduled', 'live', 'completed', 'cancelled', 'postponed')
+  createdBy UUID [ref: > user.id]
+}
+
+Table sessionFeedback{
+  id UUID [primary key]
+  studentId UUID [ref: > student.id]
+  feedbackType enum('session', 'instructor') [not null]
+  feedbackTypeId UUID 
+  avgRating Number [not null]
+  feedback varchar [not null]
+  parameters json
+}
+
+Table attendance {
+  id UUID [primary key]
+  studentId UUID [ref: > student.id]
+  courseId UUID [ref: > course.id]
+  sessionId UUID [ref: > session.id]
+  status enum('present', 'absent', 'leave', 'half') [not null]
+  markedBy UUID [ref: > user.id]
+  markedAt datetime
+}
+
+Table assignment {
+  id UUID [primary key]
+  title varchar
+  sessionId UUID [ref: > session.id]
+  prompt varchar [not null]
+  submissionDeadline datetime [not null]
+  attachments varchar [not null]
+  instructions varchar [not null]
+  task vatchar [not null]
+  createdBy UUID [ref: > user.id]
+  // submissionIds array [ref: > assignmentSubmission.id]
+}
+
+Table assignmentSubmission {
+  id UUID [primary key]
+  studentId UUID [ref: > student.id]
+  assignmentId UUID [ref: > assignment.id]
+  gitSubmissionLink varchar [not null]
+  repoName varchar
+  branchName varchar
+  remarks varchar 
+  submittedAt timestamps
+  onTimeSubmission Boolean
+}
+
+Table assignmentResult {
+  id UUID [primary key]
+  submissionId UUID [ref: > assignmentSubmission.id]
+  parameters json
+  totalMarks Number
+  marksObtained Number
+  percentage Number
+  points Number
+  bonusPoints Number
+  totalPoints Number
+  feedback varchar
+  codeQualityScore Number
+  evalBy UUID [ref: > instructor.id]
+  evalAt timestamp
+  result enum('pass', 'failed')
+}
+
+Table quiz {
+  id UUID [primary key]
+  title varchar
+  sessionId UUID [ref: > session.id]
+  link varchar
+  submissionDeadline datetime [not null]
+  totalMarks varchar
+  passingMarks varchar
+  totaldurationInMins Number
+  createdBy UUID [ref: > user.id]
+}
+
+Table quizResult {
+  id UUID [primary key]
+  studentId UUID [ref: > student.id]
+  quizId UUID [ref: > quiz.id]
+  totalMarks Number
+  marksObtained Number
+  percentage Number
+  points Number
+  bonusPoints Number
+  totalPoints Number
+  timeTakenInMins Number
+  submittedAt datetime
+  feedback varchar
+  result enum('pass', 'failed')
+}
+
+Table studentLedger {
+  id UUID [primary key]
+  studentId UUID [ref: > student.id]
+  sourceType enum('assignment', 'quiz', 'attendance', 'extra')
+  sourceId UUID 
+  points Number
+  description varchar
+  createdAt timestamp
+  updatedAt timestamp 
+  deletedAt timestamp
+}
+
+Table studentMetrics {
+  id UUID [primary key]
+  studentId UUID [ref: > student.id]
+  totalPoints Number
+  attendancePercentage Number
+  assignmentAvgScore Number
+  quizAvgScore Number
+  rank Number
+  percentile Number
+  assignmentSubmitted Number
+  totalAssignments Number
+  quizCompleted Number
+  totalQuiz Number
+  sessionAttended Number
+  totalSession Number
+}
+
+
