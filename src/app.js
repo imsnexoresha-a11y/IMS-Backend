@@ -29,6 +29,15 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
+app.get('/', (_req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'IMS Backend is running',
+    health: '/health',
+    api: '/api/v1',
+  });
+});
+
 // Serve local uploads folder statically
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
