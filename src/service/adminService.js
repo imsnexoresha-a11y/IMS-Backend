@@ -294,8 +294,16 @@ class AdminService {
             throw new CustomError('Invalid profile status', 400);
         }
 
+        const oldStatus = user.profileStatus;
         user.profileStatus = profileStatus;
         await user.save();
+
+        if (oldStatus !== profileStatus && user.email) {
+            const subject = `[IMS] Account Status Updated to ${profileStatus}`;
+            const message = `<p>Hello ${user.name},</p><p>Your account status has been updated to <strong>${profileStatus}</strong> by the administrator.</p>`;
+            notificationService.sendEmail(user.email, subject, message)
+                .catch(err => console.error('[AdminService] Failed to send student status update email:', err));
+        }
 
         return {
             message: `Student ${profileStatus.toLowerCase()} successfully`,

@@ -19,6 +19,9 @@ function getTransporter() {
         user: EMAIL_USER,
         pass: EMAIL_PASS,
       },
+      tls: {
+        rejectUnauthorized: false
+      }
     });
   }
   return transporter;
@@ -39,6 +42,9 @@ function getTeacherTransporter() {
         user: TEACHER_EMAIL,
         pass: TEACHER_APP_PASSWORD,
       },
+      tls: {
+        rejectUnauthorized: false
+      }
     });
   }
   return teacherTransporter;
@@ -255,7 +261,7 @@ export async function sendEmail(to, subject, html, options = {}) {
     return { success: false, error: 'Missing recipient, subject, or HTML body.' };
   }
 
-  const client = options.useTeacherCredentials ? (getTeacherTransporter() || getTransporter()) : getTransporter();
+  const client = getTransporter();
   if (!client) {
     console.warn(`[NotificationService] Skipping email to ${to} (transporter not initialized).`);
     return { success: false, error: 'Transporter not configured.' };
@@ -271,16 +277,11 @@ export async function sendEmail(to, subject, html, options = {}) {
     .trim();
 
   // Format the FROM address properly to improve reputation
-  let fromAddress = process.env.EMAIL_FROM || process.env.EMAIL_USER;
+  const fromAddress = process.env.EMAIL_FROM || process.env.EMAIL_USER;
   let fromName = 'IMS Admin';
   
-  if (options.useTeacherCredentials && process.env.TEACHER_EMAIL) {
-    fromAddress = process.env.TEACHER_EMAIL;
+  if (options.useTeacherCredentials) {
     fromName = 'IMS Instructor';
-  }
-
-  if (options.from) {
-    fromAddress = options.from;
   }
 
   try {
@@ -290,6 +291,13 @@ export async function sendEmail(to, subject, html, options = {}) {
       subject,
       text: plainText,
       html: finalHtml,
+      replyTo: fromAddress,
+      headers: {
+        'X-Priority': '1', // High priority
+        'X-MSMail-Priority': 'High',
+        'Importance': 'high',
+        'Precedence': 'transactional'
+      }
     });
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -360,9 +368,20 @@ export async function notifyBatch(batchId, type, message, meta = {}) {
           emailHtml += `<p><a href="${finalUrl}" style="display: inline-block; padding: 10px 20px; background-color: #4f46e5; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 15px;">${linkInfo.label}</a></p>`;
         }
         
-        const isLecture = type === 'lecture_scheduled';
+        const isTeacherAction = [
+          'lecture_scheduled',
+          'lecture_started',
+          'session_cancelled',
+          'session_postponed',
+          'session_updated',
+          'notes_uploaded',
+          'topic_created',
+          'topic_updated',
+          'assignment_published',
+          'assignment_updated'
+        ].includes(type);
         const options = {};
-        if (isLecture && process.env.TEACHER_EMAIL && process.env.TEACHER_APP_PASSWORD) {
+        if (isTeacherAction && process.env.TEACHER_EMAIL && process.env.TEACHER_APP_PASSWORD) {
           options.useTeacherCredentials = true;
           options.from = process.env.TEACHER_EMAIL;
         }

@@ -189,6 +189,12 @@ export const updateInstructorStatus = async (id, active) => {
 
   const profileStatus = active ? 'Active' : 'Inactive';
 
+  const currentUser = await User.findById(instructor.userId);
+  if (!currentUser) {
+    throw new CustomError('User not found', 404);
+  }
+  const oldStatus = currentUser.profileStatus;
+
   const user = await User.findByIdAndUpdate(
     instructor.userId,
     { profileStatus },
@@ -198,8 +204,11 @@ export const updateInstructorStatus = async (id, active) => {
     },
   );
 
-  if (!user) {
-    throw new CustomError('User not found', 404);
+  if (oldStatus !== profileStatus && user.email) {
+    const subject = `[IMS] Account Status Updated to ${profileStatus}`;
+    const message = `<p>Hello ${user.name},</p><p>Your instructor account status has been updated to <strong>${profileStatus}</strong> by the administrator.</p>`;
+    notificationService.sendEmail(user.email, subject, message)
+      .catch(err => console.error('[InstructorService] Failed to send status update email:', err));
   }
 
   return user;
