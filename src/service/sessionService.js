@@ -205,6 +205,16 @@ export async function updateSession(sessionId, updateData) {
   }
 
   const oldTime = session.sessionDateAndTime ? new Date(session.sessionDateAndTime).getTime() : null;
+  
+  // Track fields changed to see if we should notify
+  const relevantFields = ['title', 'sessionDateAndTime', 'duration', 'startTime', 'endTime', 'meetUrl', 'description', 'topicIds'];
+  const hasSessionChanges = relevantFields.some(field => {
+    if (field === 'topicIds') {
+      return JSON.stringify(updateData.topicIds || []) !== JSON.stringify(session.topicIds || []);
+    }
+    return updateData[field] !== undefined && String(updateData[field]) !== String(session[field]);
+  });
+
   Object.assign(session, updateData);
   await session.save();
 
@@ -215,10 +225,27 @@ export async function updateSession(sessionId, updateData) {
     }
   }
 
+  // Notify batch students about session update
+  if (hasSessionChanges) {
+    notificationService.notifyBatch(
+      session.batchId,
+      'session_updated',
+      `🔔 The session "${session.title}" has been updated. Please check the lectures section for details.`,
+      { sessionId: session._id }
+    ).catch(err => console.error('[SessionService] Failed to send session_updated notification:', err));
+  }
+
   // Update existing Assignment if assignment details changed
   if (updateData.assignmentTitle || updateData.assignmentDescription || updateData.assignmentDeadline || updateData.githubRepoSeed) {
     const existingAssignment = await Assignment.findOne({ sessionId: session._id });
     if (existingAssignment) {
+      // Check if details actually changed
+      const hasAssignmentChanges = 
+        (updateData.assignmentTitle && updateData.assignmentTitle !== existingAssignment.title) ||
+        (updateData.assignmentDescription && updateData.assignmentDescription !== existingAssignment.prompt) ||
+        (updateData.assignmentDeadline && new Date(updateData.assignmentDeadline).getTime() !== new Date(existingAssignment.submissionDeadline).getTime()) ||
+        (updateData.githubRepoSeed && updateData.githubRepoSeed !== existingAssignment.attachments);
+
       if (updateData.assignmentTitle) {
         existingAssignment.title = updateData.assignmentTitle;
         existingAssignment.task = updateData.assignmentTitle;
@@ -227,6 +254,15 @@ export async function updateSession(sessionId, updateData) {
       if (updateData.assignmentDeadline) existingAssignment.submissionDeadline = updateData.assignmentDeadline;
       if (updateData.githubRepoSeed) existingAssignment.attachments = updateData.githubRepoSeed;
       await existingAssignment.save();
+
+      if (hasAssignmentChanges) {
+        notificationService.notifyBatch(
+          session.batchId,
+          'assignment_updated',
+          `📝 The assignment "${existingAssignment.title}" has been updated.`,
+          { sessionId: session._id, assignmentId: existingAssignment._id }
+        ).catch(err => console.error('[SessionService] Failed to send assignment_updated notification:', err));
+      }
     } else if (updateData.assignmentTitle) {
       // Create it if it didn't exist before but they added it via edit
       const assignment = new Assignment({
