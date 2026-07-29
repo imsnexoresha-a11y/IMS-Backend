@@ -1,54 +1,5 @@
-import nodemailer from 'nodemailer';
 import { User, Role, Student, Notification, Session, Assignment, Quiz } from '../models/index.js';
 import { reminderQueue } from '../queues/reminderQueue.js';
-
-let transporter = null;
-
-function getTransporter() {
-  if (!transporter) {
-    const { EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS } = process.env;
-    if (!EMAIL_HOST || !EMAIL_USER || !EMAIL_PASS) {
-      console.warn('[NotificationService] SMTP environment variables are missing. Emails will not be sent.');
-      return null;
-    }
-    transporter = nodemailer.createTransport({
-      host: EMAIL_HOST,
-      port: parseInt(EMAIL_PORT, 10) || 587,
-      secure: parseInt(EMAIL_PORT, 10) === 465,
-      auth: {
-        user: EMAIL_USER,
-        pass: EMAIL_PASS,
-      },
-      tls: {
-        rejectUnauthorized: false
-      }
-    });
-  }
-  return transporter;
-}
-
-let teacherTransporter = null;
-function getTeacherTransporter() {
-  if (!teacherTransporter) {
-    const { EMAIL_HOST, EMAIL_PORT, TEACHER_EMAIL, TEACHER_APP_PASSWORD } = process.env;
-    if (!TEACHER_EMAIL || !TEACHER_APP_PASSWORD) {
-      return null;
-    }
-    teacherTransporter = nodemailer.createTransport({
-      host: EMAIL_HOST || 'smtp.gmail.com',
-      port: parseInt(EMAIL_PORT, 10) || 587,
-      secure: parseInt(EMAIL_PORT, 10) === 465,
-      auth: {
-        user: TEACHER_EMAIL,
-        pass: TEACHER_APP_PASSWORD,
-      },
-      tls: {
-        rejectUnauthorized: false
-      }
-    });
-  }
-  return teacherTransporter;
-}
 
 /**
  * Helper to dynamically resolve meeting and target links for sessions, assignments, and quizzes.
@@ -250,8 +201,38 @@ export function setSendEmailMock(fn) {
   sendEmailMock = fn;
 }
 
+let cachedVerifiedSender = null;
+
+async function getBrevoVerifiedSender(apiKey, preferredEmail) {
+  if (cachedVerifiedSender) return cachedVerifiedSender;
+
+  try {
+    const res = await fetch('https://api.brevo.com/v3/senders', {
+      headers: { 'accept': 'application/json', 'api-key': apiKey },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const senders = data?.senders || [];
+      const activeSenders = senders.filter((s) => s.active);
+      if (activeSenders.length > 0) {
+        const match = activeSenders.find(
+          (s) => s.email && preferredEmail && s.email.toLowerCase() === preferredEmail.toLowerCase()
+        );
+        cachedVerifiedSender = match ? match.email : activeSenders[0].email;
+        console.log(`[NotificationService] Using verified Brevo sender: ${cachedVerifiedSender}`);
+        return cachedVerifiedSender;
+      }
+    }
+  } catch (err) {
+    console.warn('[NotificationService] Could not query Brevo senders list:', err.message);
+  }
+
+  cachedVerifiedSender = preferredEmail || 'mohdsaadkhan073@gmail.com';
+  return cachedVerifiedSender;
+}
+
 /**
- * Sends a transactional email using the SMTP provider configured in .env.
+ * Sends a transactional email using the Brevo HTTP REST API (v3).
  */
 export async function sendEmail(to, subject, html, options = {}) {
   if (sendEmailMock) {
@@ -261,14 +242,14 @@ export async function sendEmail(to, subject, html, options = {}) {
     return { success: false, error: 'Missing recipient, subject, or HTML body.' };
   }
 
-  const client = getTransporter();
-  if (!client) {
-    console.warn(`[NotificationService] Skipping email to ${to} (transporter not initialized).`);
-    return { success: false, error: 'Transporter not configured.' };
+  const apiKey = process.env.BREVO_API_KEY || process.env.BREVO_KEY || process.env.BREVO_APIKEY;
+  if (!apiKey) {
+    console.warn(`[NotificationService] Skipping email to ${to}: BREVO_API_KEY is not configured in environment variables.`);
+    return { success: false, error: 'BREVO_API_KEY missing' };
   }
 
   const finalHtml = html.includes('<html') ? html : buildEmailTemplate(subject, html);
-  
+
   // Extract plain text from HTML to heavily improve Inbox delivery rates (reduces Spam flags)
   const plainText = finalHtml
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -277,31 +258,61 @@ export async function sendEmail(to, subject, html, options = {}) {
     .trim();
 
   // Format the FROM address properly to improve reputation
-  const fromAddress = process.env.EMAIL_FROM || process.env.EMAIL_USER;
-  let fromName = 'IMS Admin';
-  
-  if (options.useTeacherCredentials) {
-    fromName = 'IMS Instructor';
+  let preferredSender = process.env.BREVO_SENDER_EMAIL || process.env.EMAIL_FROM || process.env.EMAIL_USER;
+  let senderName = process.env.BREVO_SENDER_NAME || 'IMS Admin';
+
+  if (options.useTeacherCredentials || options.isTeacherAction) {
+    senderName = 'IMS Instructor';
+    if (options.from) {
+      preferredSender = options.from;
+    }
+  } else if (options.from) {
+    preferredSender = options.from;
   }
 
+  const senderEmail = await getBrevoVerifiedSender(apiKey, preferredSender);
+
+  const payload = {
+    sender: {
+      name: senderName,
+      email: senderEmail,
+    },
+    to: [
+      {
+        email: to,
+      },
+    ],
+    subject,
+    htmlContent: finalHtml,
+    textContent: plainText,
+    replyTo: {
+      email: options.replyTo || senderEmail,
+    },
+  };
+
   try {
-    const info = await client.sendMail({
-      from: `"${fromName}" <${fromAddress}>`,
-      to,
-      subject,
-      text: plainText,
-      html: finalHtml,
-      replyTo: fromAddress,
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
       headers: {
-        'X-Priority': '1', // High priority
-        'X-MSMail-Priority': 'High',
-        'Importance': 'high',
-        'Precedence': 'transactional'
-      }
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'api-key': apiKey,
+      },
+      body: JSON.stringify(payload),
     });
-    return { success: true, messageId: info.messageId };
+
+    const responseData = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      const errorMsg = responseData?.message || responseData?.code || `Brevo API HTTP ${response.status}`;
+      console.error(`[NotificationService] Error sending email to ${to} via Brevo API:`, errorMsg);
+      return { success: false, error: errorMsg, statusCode: response.status };
+    }
+
+    const messageId = responseData?.messageId || `brevo-${Date.now()}`;
+    return { success: true, messageId };
   } catch (error) {
-    console.error(`[NotificationService] Error sending email to ${to}:`, error);
+    console.error(`[NotificationService] Exception during Brevo API call for ${to}:`, error);
     return { success: false, error: error.message };
   }
 }
