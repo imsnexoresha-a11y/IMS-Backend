@@ -23,7 +23,7 @@ function parseDurationToMs(durationStr) {
 async function scheduleSessionJobs(session) {
   if (session.sessionDateAndTime) {
     const now = new Date();
-    
+
     // 1. Schedule auto transition to In Progress at session start time
     const fireStart = new Date(session.sessionDateAndTime);
     if (fireStart > now) {
@@ -59,7 +59,7 @@ async function scheduleSessionJobs(session) {
 /**
  * Create and schedule a new session.
  */
-export async function createSession(sessionData, creatorId) {
+export async function createSession(sessionData, creatorId, creatorRole) {
   const {
     batchId,
     courseId,
@@ -78,9 +78,40 @@ export async function createSession(sessionData, creatorId) {
   } = sessionData;
 
   // Resolve instructor ID from creator's User ID
-  const instructor = await Instructor.findOne({ userId: creatorId });
+  let instructor = await Instructor.findOne({
+    userId: creatorId,
+  });
+
+  if (!instructor && creatorRole === 'admin') {
+    const batch = await Batch.findById(batchId);
+
+    if (!batch) {
+      throw new CustomError('Batch not found', 404);
+    }
+
+    const course = await Course.findById(courseId);
+
+    if (!course) {
+      throw new CustomError('Course not found', 404);
+    }
+
+    const possibleInstructorIds = [
+      ...(course.instructorIds || []),
+      ...(batch.teacherIds || []),
+    ];
+
+    instructor = await Instructor.findOne({
+      _id: { $in: possibleInstructorIds },
+    });
+  }
+
   if (!instructor) {
-    throw new CustomError('Instructor profile not found for this user', 404);
+    throw new CustomError(
+      creatorRole === 'admin'
+        ? 'No instructor is assigned to this batch or course'
+        : 'Instructor profile not found for this user',
+      404
+    );
   }
 
   // Verify batch exists
@@ -131,10 +162,10 @@ export async function createSession(sessionData, creatorId) {
   // Send Immediate Broadcast Email & In-App Notification
   const formattedDate = sessionDateAndTime ? new Date(sessionDateAndTime).toLocaleString() : 'TBD';
   let message = `A new lecture "${title}" has been scheduled for ${formattedDate}.`;
-  
+
   if (assignmentTitle) {
     message += `\n\n📝 An assignment "${assignmentTitle}" has also been attached to this lecture!`;
-    
+
     // Auto-create Assignment immediately so it's visible in the UI
     const assignment = new Assignment({
       title: assignmentTitle,
@@ -147,14 +178,14 @@ export async function createSession(sessionData, creatorId) {
       createdBy: creatorId,
     });
     await assignment.save();
-    
+
     notificationService.notifyBatch(batchId, 'assignment_published', `📝 A new assignment "${assignmentTitle}" has been published for your batch!`, {
       sessionId: session._id,
       assignmentId: assignment._id,
     }).catch(err => console.error('[createSession] Failed to send assignment notification:', err));
   }
-  
-  notificationService.notifyBatch(batchId, 'lecture_scheduled', message, { 
+
+  notificationService.notifyBatch(batchId, 'lecture_scheduled', message, {
     sessionId: session._id,
     meetingUrl: meetUrl
   }).catch(err => console.error('[createSession] Failed to send broadcast:', err));
@@ -205,7 +236,7 @@ export async function updateSession(sessionId, updateData) {
   }
 
   const oldTime = session.sessionDateAndTime ? new Date(session.sessionDateAndTime).getTime() : null;
-  
+
   // Track fields changed to see if we should notify
   const relevantFields = ['title', 'sessionDateAndTime', 'duration', 'startTime', 'endTime', 'meetUrl', 'description', 'topicIds'];
   const hasSessionChanges = relevantFields.some(field => {
@@ -240,7 +271,7 @@ export async function updateSession(sessionId, updateData) {
     const existingAssignment = await Assignment.findOne({ sessionId: session._id });
     if (existingAssignment) {
       // Check if details actually changed
-      const hasAssignmentChanges = 
+      const hasAssignmentChanges =
         (updateData.assignmentTitle && updateData.assignmentTitle !== existingAssignment.title) ||
         (updateData.assignmentDescription && updateData.assignmentDescription !== existingAssignment.prompt) ||
         (updateData.assignmentDeadline && new Date(updateData.assignmentDeadline).getTime() !== new Date(existingAssignment.submissionDeadline).getTime()) ||
