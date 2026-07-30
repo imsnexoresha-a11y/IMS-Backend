@@ -743,8 +743,226 @@ async function getAllMetrics(studentId, batchId) {
   await cacheService.setStudentMetricsCache(resolvedBatchId, resolvedStudent._id, metrics);
   return metrics;
 }
+async function getBatchMetrics(batchId) {
+  const emptyDistribution = [
+    {
+      range: 'Below 80',
+      students: 0,
+    },
+    {
+      range: '80–99',
+      students: 0,
+    },
+    {
+      range: '100–119',
+      students: 0,
+    },
+    {
+      range: '120–139',
+      students: 0,
+    },
+    {
+      range: '140+',
+      students: 0,
+    },
+  ];
 
+  const emptyMetrics = {
+    studentCount: 0,
+    avgOverallScore: 0,
+    avgAttendance: 0,
+    avgQuizScore: 0,
+    avgAssignmentScore: 0,
+    scoreDistribution: emptyDistribution,
+  };
+
+  if (!batchId) {
+    return emptyMetrics;
+  }
+
+  const batch = await Batch.findById(batchId)
+    .select('_id studentIds')
+    .lean();
+
+  if (!batch) {
+    return emptyMetrics;
+  }
+
+  const batchStudentIds = Array.isArray(
+    batch.studentIds
+  )
+    ? batch.studentIds
+    : [];
+
+  const membershipConditions = [
+    {
+      batchId,
+    },
+  ];
+
+  if (batchStudentIds.length > 0) {
+    membershipConditions.push({
+      _id: {
+        $in: batchStudentIds,
+      },
+    });
+  }
+
+  const students = await Student.find({
+    $or: membershipConditions,
+  })
+    .select('_id')
+    .lean();
+
+  if (students.length === 0) {
+    return emptyMetrics;
+  }
+
+  const batchConfig = await getBatchConfig(batchId);
+
+  const baseScore = toNumber(
+    batchConfig?.baseScore
+  );
+
+  const markCap =
+    batchConfig?.markCap ??
+    CONSTANTS.MARK_CAP;
+
+  const studentMetrics = await Promise.all(
+    students.map(async (student) => {
+      const studentId =
+        student._id.toString();
+
+      const [
+        ledgerSum,
+        attendanceRecords,
+        quizAvgScore,
+        assignmentAvgScore,
+      ] = await Promise.all([
+        getLedgerSum(studentId),
+        getAttendanceRecords(studentId),
+        getQuizAvgScore(studentId),
+        getAssignmentAvgScore(studentId),
+      ]);
+
+      const presentCount =
+        attendanceRecords.filter(
+          (record) =>
+            record.status === 'present'
+        ).length;
+
+      const attendanceRate =
+        attendanceRecords.length > 0
+          ? (
+            presentCount /
+            attendanceRecords.length
+          ) * 100
+          : 0;
+
+      const totalScore = clamp(
+        ledgerSum + baseScore,
+        0,
+        markCap
+      );
+
+      return {
+        totalScore,
+        attendanceRate,
+        quizAvgScore,
+        assignmentAvgScore,
+      };
+    })
+  );
+
+  const totalScores = studentMetrics.map(
+    (metrics) =>
+      toNumber(metrics.totalScore)
+  );
+
+  const attendanceScores =
+    studentMetrics.map((metrics) =>
+      toNumber(metrics.attendanceRate)
+    );
+
+  const quizScores = studentMetrics.map(
+    (metrics) =>
+      toNumber(metrics.quizAvgScore)
+  );
+
+  const assignmentScores =
+    studentMetrics.map((metrics) =>
+      toNumber(
+        metrics.assignmentAvgScore
+      )
+    );
+
+  const scoreDistribution = [
+    {
+      range: 'Below 80',
+      students: totalScores.filter(
+        (score) => score < 80
+      ).length,
+    },
+    {
+      range: '80–99',
+      students: totalScores.filter(
+        (score) =>
+          score >= 80 &&
+          score < 100
+      ).length,
+    },
+    {
+      range: '100–119',
+      students: totalScores.filter(
+        (score) =>
+          score >= 100 &&
+          score < 120
+      ).length,
+    },
+    {
+      range: '120–139',
+      students: totalScores.filter(
+        (score) =>
+          score >= 120 &&
+          score < 140
+      ).length,
+    },
+    {
+      range: '140+',
+      students: totalScores.filter(
+        (score) => score >= 140
+      ).length,
+    },
+  ];
+
+  return {
+    studentCount: students.length,
+
+    avgOverallScore: Number(
+      average(totalScores).toFixed(2)
+    ),
+
+    avgAttendance: Number(
+      average(
+        attendanceScores
+      ).toFixed(2)
+    ),
+
+    avgQuizScore: Number(
+      average(quizScores).toFixed(2)
+    ),
+
+    avgAssignmentScore: Number(
+      average(
+        assignmentScores
+      ).toFixed(2)
+    ),
+
+    scoreDistribution,
+  };
+}
 const metricsService = {
+  getBatchMetrics,
   getTotalScore,
   getBatchRank,
   getBatchPercentile,
@@ -767,6 +985,7 @@ const metricsService = {
 };
 
 export {
+  getBatchMetrics,
   getTotalScore,
   getBatchRank,
   getBatchPercentile,

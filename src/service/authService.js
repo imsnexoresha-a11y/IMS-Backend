@@ -150,14 +150,14 @@ async function changePassword(userId, { currentPassword, newPassword, otp }) {
     user.tokenVersion += 1;
 
     await user.save();
-    
+
     await Otp.deleteMany({ email: user.email, type: 'change_password' }); // clear OTPs
 
     // Send confirmation email
     const { sendEmail } = await import('./notificationService.js');
     await sendEmail(
-        user.email, 
-        'Password Changed Successfully', 
+        user.email,
+        'Password Changed Successfully',
         `<p>Hello ${user.name},</p><p>Your password was successfully updated via your Profile. If you did not make this change, please contact support immediately.</p>`
     );
 
@@ -166,39 +166,119 @@ async function changePassword(userId, { currentPassword, newPassword, otp }) {
     };
 }
 
-async function sendOtp({ email, type = 'forgot_password' }) {
-    if (!email) throw new CustomError('Email is required', 400);
 
-    const user = await User.findOne({ email });
-    if (!user) {
-        // Return generic success to prevent email enumeration
-        return { message: 'If that email exists, an OTP has been sent.' };
+async function sendOtp({
+    email,
+    type = 'forgot_password',
+}) {
+    if (!email) {
+        throw new CustomError(
+            'Email is required',
+            400
+        );
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
+    const normalizedEmail =
+        email.toLowerCase().trim();
 
-    const { Otp } = await import('../models/index.js');
-    await Otp.deleteMany({ email, type }); // Clear old OTPs
-    await Otp.create({
-        email,
-        otp,
-        type,
-        expiresAt: new Date(Date.now() + 10 * 60000) // 10 mins
+    const allowedTypes = [
+        'forgot_password',
+        'change_password',
+    ];
+
+    if (!allowedTypes.includes(type)) {
+        throw new CustomError(
+            'Invalid OTP type',
+            400
+        );
+    }
+
+    const user = await User.findOne({
+        email: normalizedEmail,
     });
 
-    const { sendEmail } = await import('./notificationService.js');
+    if (!user) {
+        return {
+            message:
+                'If that email exists, an OTP has been sent.',
+        };
+    }
+
+    const otp = Math.floor(
+        100000 + Math.random() * 900000
+    ).toString();
+
+    const { Otp } = await import(
+        '../models/index.js'
+    );
+
+    await Otp.deleteMany({
+        email: normalizedEmail,
+        type,
+    });
+
+    const otpRecord = await Otp.create({
+        email: normalizedEmail,
+        otp,
+        type,
+        expiresAt: new Date(
+            Date.now() + 10 * 60 * 1000
+        ),
+    });
+
+    const { sendEmail } = await import(
+        './notificationService.js'
+    );
+
     const emailHtml = `
-      <p>Hello ${user.name},</p>
-      <p>Your One-Time Password (OTP) for ${type.replace('_', ' ')} is:</p>
-      <h2 style="background: #f1f5f9; padding: 15px; border-radius: 8px; letter-spacing: 5px; font-weight: bold; text-align: center; color: #4f46e5;">
-        ${otp}
-      </h2>
-      <p>This code will expire in 10 minutes. Do not share it with anyone.</p>
+        <p>Hello ${user.name},</p>
+        <p>Your One-Time Password (OTP) for ${type.replace(
+        /_/g,
+        ' '
+    )} is:</p>
+
+        <h2 style="
+            background: #f1f5f9;
+            padding: 15px;
+            border-radius: 8px;
+            letter-spacing: 5px;
+            font-weight: bold;
+            text-align: center;
+            color: #4f46e5;
+        ">
+            ${otp}
+        </h2>
+
+        <p>
+            This code will expire in 10 minutes.
+            Do not share it with anyone.
+        </p>
     `;
 
-    await sendEmail(email, 'Your OTP Code', emailHtml);
-    return { message: 'OTP sent successfully' };
+    const emailResult = await sendEmail(
+        normalizedEmail,
+        'Your OTP Code',
+        emailHtml
+    );
+
+    if (!emailResult?.success) {
+        await Otp.deleteOne({
+            _id: otpRecord._id,
+        });
+
+        throw new CustomError(
+            emailResult?.error ||
+            'Unable to send OTP email',
+            500
+        );
+    }
+
+    return {
+        message: 'OTP sent successfully',
+    };
 }
+
+
 
 async function verifyOtp({ email, otp, type = 'forgot_password' }) {
     if (!email || !otp) throw new CustomError('Email and OTP are required', 400);
@@ -209,7 +289,7 @@ async function verifyOtp({ email, otp, type = 'forgot_password' }) {
     if (!record) {
         throw new CustomError('Invalid or expired OTP', 400);
     }
-    
+
     // Log the user in with the OTP!
     const normalizedEmail = email.toLowerCase().trim();
     const user = await User.findOne({ email: normalizedEmail }).populate('roleId');
@@ -245,7 +325,7 @@ async function resetPassword({ email, otp, newPassword, type = 'forgot_password'
     if (!email || !otp || !newPassword) {
         throw new CustomError('Email, OTP, and newPassword are required', 400);
     }
-    
+
     if (newPassword.length < 6) {
         throw new CustomError('New password must be at least 6 characters', 400);
     }
@@ -269,8 +349,8 @@ async function resetPassword({ email, otp, newPassword, type = 'forgot_password'
 
     const { sendEmail } = await import('./notificationService.js');
     await sendEmail(
-        email, 
-        'Password Changed Successfully', 
+        email,
+        'Password Changed Successfully',
         `<p>Hello ${user.name},</p><p>Your password has been changed successfully. If you did not do this, please contact support immediately.</p>`
     );
 

@@ -39,7 +39,7 @@ if (isCloudinaryConfigured) {
 const fileFilter = (req, file, cb) => {
   const allowedExtensions = ['.pdf', '.md', '.docx'];
   const ext = path.extname(file.originalname).toLowerCase();
-  
+
   if (allowedExtensions.includes(ext)) {
     cb(null, true);
   } else {
@@ -266,7 +266,11 @@ export const deleteCourse = asyncHandler(async (req, res) => {
  * POST /api/v1/instructor/sessions
  */
 export const createSession = asyncHandler(async (req, res) => {
-  const session = await sessionService.createSession(req.body, req.user.id);
+  const session = await sessionService.createSession(
+    req.body,
+    req.user.id,
+    req.user.role
+  );
   res.status(201).json({
     success: true,
     message: 'Session created and scheduled successfully',
