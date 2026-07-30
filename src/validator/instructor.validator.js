@@ -4,8 +4,13 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function isValidIndianMobile(mobileNo) {
+  if (!mobileNo) return false;
+  return /^[6-9]\d{9}$/.test(String(mobileNo).trim());
+}
+
 export const validateCreateInstructor = (req, _res, next) => {
-  const { name, email, password, designation } = req.body;
+  const { name, email, mobileNo, password, designation } = req.body;
 
   if (!name) {
     throw new CustomError("Name is required", 400);
@@ -17,6 +22,14 @@ export const validateCreateInstructor = (req, _res, next) => {
 
   if (!isValidEmail(email)) {
     throw new CustomError("Invalid email format", 400);
+  }
+
+  if (!mobileNo) {
+    throw new CustomError("Mobile number is required", 400);
+  }
+
+  if (!isValidIndianMobile(mobileNo)) {
+    throw new CustomError("Mobile number must be a valid 10-digit Indian number starting with 6, 7, 8, or 9", 400);
   }
 
   if (!password) {
@@ -34,7 +47,15 @@ export const validateCreateInstructor = (req, _res, next) => {
   next();
 };
 
-export const validateUpdateInstructor = (_req, _res, next) => {
+export const validateUpdateInstructor = (req, _res, next) => {
+  const { mobileNo } = req.body;
+
+  if (mobileNo !== undefined) {
+    if (!mobileNo || !isValidIndianMobile(mobileNo)) {
+      throw new CustomError("Mobile number must be a valid 10-digit Indian number starting with 6, 7, 8, or 9", 400);
+    }
+  }
+
   next();
 };
 
