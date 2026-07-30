@@ -5,6 +5,7 @@ import {
   StudentLedger,
   StudentMetrics,
   AuditLog,
+  AssignmentSubmission,
 } from '../models/index.js';
 import { CustomError } from '../../utils/customError.js';
 import * as cacheService from './cacheService.js';
@@ -365,6 +366,15 @@ async function manualScore({ studentId, submissionId, manualScore, marks, reason
   }
 
   const student = await resolveStudentOrThrow(studentId);
+
+  const submission = await AssignmentSubmission.findById(submissionId);
+  if (!submission) {
+    throw new CustomError('Submission not found', 404);
+  }
+
+  if (String(submission.studentId) !== String(studentId)) {
+    throw new CustomError('Submission does not belong to the selected student', 400);
+  }
 
   const result = await applyMarkEvent({
     studentId,
