@@ -214,7 +214,6 @@ async function sendOtp({ email, type = 'forgot_password' }) {
     await sendEmail(user.email, 'Your OTP Code', emailHtml);
     return { message: 'OTP sent successfully' };
 }
-}
 
 
 
