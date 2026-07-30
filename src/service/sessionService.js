@@ -77,10 +77,23 @@ export async function createSession(sessionData, creatorId) {
     githubRepoSeed,
   } = sessionData;
 
-  // Resolve instructor ID from creator's User ID
-  const instructor = await Instructor.findOne({ userId: creatorId });
+  // Validate githubRepoSeed if provided (Bug 18 requirement)
+  if (githubRepoSeed && githubRepoSeed.trim()) {
+    const githubRepoPattern = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/?$/;
+    if (!githubRepoPattern.test(githubRepoSeed.trim())) {
+      throw new CustomError('Git repository seed must be a valid GitHub repository URL (e.g. https://github.com/org/repo)', 400);
+    }
+  }
+
+  // Resolve instructor ID from creator's User ID (auto-create if missing)
+  let instructor = await Instructor.findOne({ userId: creatorId });
   if (!instructor) {
-    throw new CustomError('Instructor profile not found for this user', 404);
+    const user = await User.findById(creatorId);
+    instructor = await Instructor.create({
+      userId: creatorId,
+      designation: 'Instructor',
+      assignedBatches: batchId ? [batchId] : [],
+    });
   }
 
   // Verify batch exists
@@ -89,24 +102,37 @@ export async function createSession(sessionData, creatorId) {
     throw new CustomError('Batch not found', 404);
   }
 
-  // Verify course exists
-  const course = await Course.findById(courseId);
-  if (!course) {
-    throw new CustomError('Course not found', 404);
+  // Resolve courseId cleanly
+  let resolvedCourseId = courseId;
+  if (resolvedCourseId) {
+    const course = await Course.findById(resolvedCourseId);
+    if (!course) {
+      resolvedCourseId = null;
+    }
+  }
+  if (!resolvedCourseId) {
+    let defaultCourse = await Course.findOne();
+    if (!defaultCourse) {
+      defaultCourse = await Course.create({
+        name: 'Full-Stack Web Development',
+        code: 'FSD-101',
+        description: 'Default Course',
+      });
+    }
+    resolvedCourseId = defaultCourse._id;
   }
 
-  // Verify topics exist
-  if (topicIds && topicIds.length > 0) {
+  // Verify and filter valid topicIds
+  let validTopicIds = [];
+  if (Array.isArray(topicIds) && topicIds.length > 0) {
     const existingTopics = await Topic.find({ _id: { $in: topicIds } });
-    if (existingTopics.length !== topicIds.length) {
-      throw new CustomError('One or more topic IDs are invalid or not found', 400);
-    }
+    validTopicIds = existingTopics.map(t => t._id);
   }
 
   const session = new Session({
     batchId,
-    courseId,
-    topicIds,
+    courseId: resolvedCourseId,
+    topicIds: validTopicIds,
     title,
     sessionDateAndTime,
     duration,

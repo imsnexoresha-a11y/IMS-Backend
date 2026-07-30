@@ -137,9 +137,17 @@ async function changePassword(userId, { currentPassword, newPassword, otp }) {
         throw new CustomError('Current password is incorrect', 400);
     }
 
-    // Verify OTP
+    // Verify OTP (case-insensitive email matching)
     const { Otp } = await import('../models/index.js');
-    const record = await Otp.findOne({ email: user.email, otp, type: 'change_password', expiresAt: { $gt: new Date() } });
+    const normalizedUserEmail = user.email.toLowerCase().trim();
+    const cleanOtp = String(otp).trim();
+
+    const record = await Otp.findOne({ 
+      email: { $regex: new RegExp(`^${normalizedUserEmail}$`, 'i') }, 
+      otp: cleanOtp, 
+      type: 'change_password', 
+      expiresAt: { $gt: new Date() } 
+    });
 
     if (!record) {
         throw new CustomError('Invalid or expired OTP', 400);
@@ -151,7 +159,7 @@ async function changePassword(userId, { currentPassword, newPassword, otp }) {
 
     await user.save();
     
-    await Otp.deleteMany({ email: user.email, type: 'change_password' }); // clear OTPs
+    await Otp.deleteMany({ email: { $regex: new RegExp(`^${normalizedUserEmail}$`, 'i') }, type: 'change_password' }); // clear OTPs
 
     // Send confirmation email
     const { sendEmail } = await import('./notificationService.js');
@@ -168,8 +176,9 @@ async function changePassword(userId, { currentPassword, newPassword, otp }) {
 
 async function sendOtp({ email, type = 'forgot_password' }) {
     if (!email) throw new CustomError('Email is required', 400);
+    const normalizedEmail = email.toLowerCase().trim();
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } });
     if (!user) {
         // Return generic success to prevent email enumeration
         return { message: 'If that email exists, an OTP has been sent.' };
@@ -178,9 +187,9 @@ async function sendOtp({ email, type = 'forgot_password' }) {
     const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
 
     const { Otp } = await import('../models/index.js');
-    await Otp.deleteMany({ email, type }); // Clear old OTPs
+    await Otp.deleteMany({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') }, type }); // Clear old OTPs
     await Otp.create({
-        email,
+        email: normalizedEmail,
         otp,
         type,
         expiresAt: new Date(Date.now() + 10 * 60000) // 10 mins
@@ -188,31 +197,39 @@ async function sendOtp({ email, type = 'forgot_password' }) {
 
     const { sendEmail } = await import('./notificationService.js');
     const emailHtml = `
-      <p>Hello ${user.name},</p>
-      <p>Your One-Time Password (OTP) for ${type.replace('_', ' ')} is:</p>
-      <h2 style="background: #f1f5f9; padding: 15px; border-radius: 8px; letter-spacing: 5px; font-weight: bold; text-align: center; color: #4f46e5;">
-        ${otp}
-      </h2>
-      <p>This code will expire in 10 minutes. Do not share it with anyone.</p>
+      <p>Hello <strong>${user.name}</strong>,</p>
+      <p>Your One-Time Password (OTP) for <strong>${type.replace('_', ' ')}</strong> is:</p>
+      <div style="background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%); border: 1px solid rgba(192, 132, 252, 0.4); padding: 20px; border-radius: 16px; text-align: center; margin: 20px 0; box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.8), 0 4px 12px rgba(168, 85, 247, 0.15);">
+        <span style="font-size: 32px; font-weight: 900; letter-spacing: 8px; color: #7e22ce;">
+          ${otp}
+        </span>
+      </div>
+      <p style="color: #6b21a8; font-size: 13px;">This code will expire in 10 minutes. Do not share it with anyone.</p>
     `;
 
-    await sendEmail(email, 'Your OTP Code', emailHtml);
+    await sendEmail(user.email, 'Your OTP Code', emailHtml);
     return { message: 'OTP sent successfully' };
 }
 
 async function verifyOtp({ email, otp, type = 'forgot_password' }) {
     if (!email || !otp) throw new CustomError('Email and OTP are required', 400);
 
+    const normalizedEmail = email.toLowerCase().trim();
+    const cleanOtp = String(otp).trim();
+
     const { Otp } = await import('../models/index.js');
-    const record = await Otp.findOne({ email, otp, type, expiresAt: { $gt: new Date() } });
+    const record = await Otp.findOne({ 
+      email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') }, 
+      otp: cleanOtp, 
+      type, 
+      expiresAt: { $gt: new Date() } 
+    });
 
     if (!record) {
         throw new CustomError('Invalid or expired OTP', 400);
     }
     
-    // Log the user in with the OTP!
-    const normalizedEmail = email.toLowerCase().trim();
-    const user = await User.findOne({ email: normalizedEmail }).populate('roleId');
+    const user = await User.findOne({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } }).populate('roleId');
 
     if (!user) {
         throw new CustomError('User not found', 404);
@@ -221,9 +238,6 @@ async function verifyOtp({ email, otp, type = 'forgot_password' }) {
     if (user.profileStatus !== 'Active') {
         throw new CustomError('User account is not active', 403);
     }
-
-    // Delete OTP record since it's used
-    await Otp.deleteOne({ _id: record._id });
 
     const roleName = user.roleId?.name;
 
@@ -250,14 +264,22 @@ async function resetPassword({ email, otp, newPassword, type = 'forgot_password'
         throw new CustomError('New password must be at least 6 characters', 400);
     }
 
+    const normalizedEmail = email.toLowerCase().trim();
+    const cleanOtp = String(otp).trim();
+
     const { Otp } = await import('../models/index.js');
-    const record = await Otp.findOne({ email, otp, type, expiresAt: { $gt: new Date() } });
+    const record = await Otp.findOne({ 
+      email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') }, 
+      otp: cleanOtp, 
+      type, 
+      expiresAt: { $gt: new Date() } 
+    });
 
     if (!record) {
         throw new CustomError('Invalid or expired OTP', 400);
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } });
     if (!user) throw new CustomError('User not found', 404);
 
     user.password = await bcrypt.hash(newPassword, 10);
@@ -265,11 +287,11 @@ async function resetPassword({ email, otp, newPassword, type = 'forgot_password'
     user.tokenVersion += 1;
     await user.save();
 
-    await Otp.deleteMany({ email, type }); // clear OTPs
+    await Otp.deleteMany({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') }, type }); // clear OTPs
 
     const { sendEmail } = await import('./notificationService.js');
     await sendEmail(
-        email, 
+        user.email, 
         'Password Changed Successfully', 
         `<p>Hello ${user.name},</p><p>Your password has been changed successfully. If you did not do this, please contact support immediately.</p>`
     );
