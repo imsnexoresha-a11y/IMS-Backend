@@ -369,6 +369,7 @@ class AdminService {
             description,
             startDate,
             endDate,
+            status,
             teacherIds,
             studentIds,
         } = batchData;
@@ -387,6 +388,7 @@ class AdminService {
             description: description || '',
             startDate: startDate || null,
             endDate: endDate || null,
+            status: status || 'upcoming',
             teacherIds: teacherIds || [],
             studentIds: studentIds || [],
         });
@@ -434,32 +436,92 @@ class AdminService {
         }
 
         if (batchData.teacherIds !== undefined) {
-            await this.validateTeachersExist(batchData.teacherIds);
+            await this.validateTeachersExist(
+                batchData.teacherIds
+            );
         }
 
         if (batchData.studentIds !== undefined) {
-            await this.validateStudentsExist(batchData.studentIds);
+            await this.validateStudentsExist(
+                batchData.studentIds
+            );
         }
 
-        if (batchData.name) batch.name = batchData.name;
-        if (batchData.description !== undefined) batch.description = batchData.description;
-        if (batchData.startDate !== undefined) batch.startDate = batchData.startDate || null;
-        if (batchData.endDate !== undefined) batch.endDate = batchData.endDate || null;
-        if (batchData.studentIds !== undefined) batch.studentIds = batchData.studentIds;
+        if (batchData.status !== undefined) {
+            const allowedStatuses = [
+                'upcoming',
+                'ongoing',
+                'completed',
+            ];
+
+            if (
+                !allowedStatuses.includes(
+                    batchData.status
+                )
+            ) {
+                throw new CustomError(
+                    'Invalid batch status',
+                    400
+                );
+            }
+
+            batch.status = batchData.status;
+        }
+
+        if (batchData.name) {
+            batch.name = batchData.name;
+        }
+
+        if (batchData.description !== undefined) {
+            batch.description =
+                batchData.description;
+        }
+
+        if (batchData.startDate !== undefined) {
+            batch.startDate =
+                batchData.startDate || null;
+        }
+
+        if (batchData.endDate !== undefined) {
+            batch.endDate =
+                batchData.endDate || null;
+        }
+
+        if (batchData.studentIds !== undefined) {
+            batch.studentIds =
+                batchData.studentIds;
+        }
 
         if (batchData.teacherIds !== undefined) {
-            batch.teacherIds = batchData.teacherIds;
+            batch.teacherIds =
+                batchData.teacherIds;
 
-            // Sync instructors' assignedBatches array
             await Instructor.updateMany(
-                { assignedBatches: batchId },
-                { $pull: { assignedBatches: batchId } }
+                {
+                    assignedBatches: batchId,
+                },
+                {
+                    $pull: {
+                        assignedBatches: batchId,
+                    },
+                }
             );
-            
-            if (batchData.teacherIds.length > 0) {
+
+            if (
+                batchData.teacherIds.length > 0
+            ) {
                 await Instructor.updateMany(
-                    { _id: { $in: batchData.teacherIds } },
-                    { $addToSet: { assignedBatches: batchId } }
+                    {
+                        _id: {
+                            $in: batchData.teacherIds,
+                        },
+                    },
+                    {
+                        $addToSet: {
+                            assignedBatches:
+                                batchId,
+                        },
+                    }
                 );
             }
         }
@@ -467,10 +529,12 @@ class AdminService {
         await batch.save();
 
         return {
-            message: 'Batch updated successfully',
+            message:
+                'Batch updated successfully',
             batch,
         };
     }
+
 
     async closeBatch(batchId) {
         const batch = await Batch.findById(batchId);
@@ -633,14 +697,13 @@ class AdminService {
         };
     }
 
+
     async getDashboard() {
         const totalStudents = await Student.countDocuments();
         const totalTeachers = await Instructor.countDocuments();
         const totalBatches = await Batch.countDocuments();
 
-        const topMetrics = await StudentMetrics.find()
-            .sort({ totalPoints: -1 })
-            .limit(5)
+        const metrics = await StudentMetrics.find()
             .populate({
                 path: 'studentId',
                 populate: {
@@ -649,16 +712,23 @@ class AdminService {
                 },
             });
 
-        const bottomMetrics = await StudentMetrics.find()
-            .sort({ totalPoints: 1 })
-            .limit(5)
-            .populate({
-                path: 'studentId',
-                populate: {
-                    path: 'userId',
-                    select: 'name email',
-                },
-            });
+        const validMetrics = metrics.filter(
+            (metric) =>
+                metric.studentId &&
+                metric.studentId.userId
+        );
+
+        const sortedMetrics = validMetrics.sort(
+            (a, b) =>
+                Number(b.totalPoints || 0) -
+                Number(a.totalPoints || 0)
+        );
+
+        const topMetrics = sortedMetrics.slice(0, 5);
+
+        const bottomMetrics = [...sortedMetrics]
+            .reverse()
+            .slice(0, 5);
 
         return {
             message: 'Dashboard fetched successfully',
