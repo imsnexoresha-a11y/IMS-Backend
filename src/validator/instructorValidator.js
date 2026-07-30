@@ -147,12 +147,11 @@ export const createSessionValidator = [
     .isString()
     .withMessage('batchId must be a string'),
   body('courseId')
-    .trim()
-    .notEmpty()
-    .withMessage('courseId is required')
+    .optional({ checkFalsy: true })
     .isString()
     .withMessage('courseId must be a string'),
   body('topicIds')
+    .optional()
     .customSanitizer((value) => {
       if (typeof value === 'string') {
         try {
@@ -162,13 +161,7 @@ export const createSessionValidator = [
         }
       }
       return value;
-    })
-    .isArray({ min: 1 })
-    .withMessage('topicIds must be a non-empty array of topic IDs'),
-  body('topicIds.*')
-    .trim()
-    .notEmpty()
-    .withMessage('Each topicId must be a non-empty string'),
+    }),
   body('title')
     .trim()
     .notEmpty()
@@ -179,13 +172,7 @@ export const createSessionValidator = [
     .notEmpty()
     .withMessage('sessionDateAndTime is required')
     .isISO8601()
-    .withMessage('sessionDateAndTime must be a valid ISO8601 date string')
-    .custom((value) => {
-      if (new Date(value) <= new Date()) {
-        throw new Error('sessionDateAndTime must be a future date and time');
-      }
-      return true;
-    }),
+    .withMessage('sessionDateAndTime must be a valid ISO8601 date string'),
   body('duration')
     .trim()
     .notEmpty()

@@ -30,7 +30,7 @@ export function validateProfileUpdate(req, _res, next) {
     throw new CustomError('Mobile number must be at least 10 characters long', 400);
   }
 
-  if (gitHubUrl !== undefined && gitHubUrl && !/^(https?:\/\/)?(www\.)?github\.com\/[A-Za-z0-9_.-]+\/?$/i.test(gitHubUrl)) {
+  if (gitHubUrl !== undefined && gitHubUrl && !/^(https?:\/\/)?(www\.)?github\.com\/.+/i.test(gitHubUrl)) {
     throw new CustomError('Invalid GitHub profile URL', 400);
   }
 

@@ -1,5 +1,30 @@
 import { User, Role, Student, Notification, Session, Assignment, Quiz } from '../models/index.js';
 import { reminderQueue } from '../queues/reminderQueue.js';
+import nodemailer from 'nodemailer';
+
+let smtpTransporter = null;
+
+function getSmtpTransporter() {
+  if (!smtpTransporter) {
+    const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
+    const port = Number(process.env.EMAIL_PORT) || 587;
+    const user = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'imsnexoresha@gmail.com';
+    const pass = process.env.EMAIL_PASS;
+
+    if (!pass) return null;
+
+    smtpTransporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: {
+        user,
+        pass,
+      },
+    });
+  }
+  return smtpTransporter;
+}
 
 /**
  * Helper to dynamically resolve meeting and target links for sessions, assignments, and quizzes.
@@ -107,7 +132,7 @@ export async function createNotification(userId, type, message, meta = {}) {
   }
 }
 
-// Premium HTML Email Template Builder
+// Premium HTML Email Template Builder (Glassmorphism Lavender Theme)
 function buildEmailTemplate(title, message) {
   const cleanTitle = title.replace(/^\[IMS\]\s*/i, '').replace(/^\[IMS ADMIN ALERT\]\s*/i, '');
   return `
@@ -118,57 +143,67 @@ function buildEmailTemplate(title, message) {
       <style>
         body {
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-          background-color: #f8fafc;
+          background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 50%, #f3e8ff 100%);
           margin: 0;
-          padding: 0;
+          padding: 40px 15px;
+          color: #3b0764;
         }
-        .container {
-          max-width: 600px;
-          margin: 40px auto;
-          background: #ffffff;
-          border-radius: 16px;
+        .wrapper {
+          max-width: 620px;
+          margin: 0 auto;
+        }
+        .glass-container {
+          background: rgba(255, 255, 255, 0.88);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border-radius: 24px;
+          border: 1px solid rgba(233, 213, 255, 0.9);
           overflow: hidden;
-          box-shadow: 0 10px 25px rgba(79, 70, 229, 0.05), 0 4px 12px rgba(0, 0, 0, 0.03);
-          border: 1px solid #e2e8f0;
+          box-shadow: 0 20px 40px rgba(139, 92, 246, 0.15), 0 8px 16px rgba(168, 85, 247, 0.08);
         }
         .header {
-          background: linear-gradient(135deg, #4f46e5, #6366f1);
-          padding: 35px 24px;
+          background: linear-gradient(135deg, #a855f7 0%, #8b5cf6 50%, #7c3aed 100%);
+          padding: 32px 24px;
           text-align: center;
           color: #ffffff;
+          box-shadow: 0 4px 15px rgba(168, 85, 247, 0.25);
         }
         .header h1 {
           margin: 0;
-          font-size: 22px;
-          font-weight: 700;
-          letter-spacing: -0.5px;
+          font-size: 20px;
+          font-weight: 800;
+          letter-spacing: 1px;
           text-transform: uppercase;
+          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
         }
         .content {
-          padding: 40px 30px;
-          color: #334155;
-          line-height: 1.65;
+          padding: 36px 32px;
+          color: #3b0764;
+          line-height: 1.7;
         }
-        .content p {
-          margin: 0 0 20px;
-          font-size: 15px;
+        .title {
+          font-size: 19px;
+          font-weight: 800;
+          color: #6b21a8;
+          margin-bottom: 20px;
+          letter-spacing: -0.3px;
         }
         .meta-box {
-          background-color: #f1f5f9;
-          border-left: 4px solid #4f46e5;
-          padding: 15px 20px;
-          border-radius: 0 8px 8px 0;
-          margin: 25px 0 10px;
+          background: rgba(243, 232, 255, 0.7);
+          border-left: 4px solid #a855f7;
+          padding: 16px 20px;
+          border-radius: 12px;
+          margin: 20px 0;
           font-size: 14px;
-          color: #475569;
+          color: #581c87;
         }
         .footer {
-          background: #f8fafc;
-          padding: 24px 30px;
+          background: rgba(250, 245, 255, 0.9);
+          padding: 22px 30px;
           text-align: center;
           font-size: 12px;
-          color: #64748b;
-          border-top: 1px solid #e2e8f0;
+          color: #7e22ce;
+          border-top: 1px solid #f3e8ff;
         }
         .footer p {
           margin: 4px 0;
@@ -176,19 +211,21 @@ function buildEmailTemplate(title, message) {
       </style>
     </head>
     <body>
-      <div class="container">
-        <div class="header">
-          <h1>Intern Management System</h1>
-        </div>
-        <div class="content">
-          <p style="font-size: 18px; font-weight: 700; color: #0f172a; margin-bottom: 20px;">${cleanTitle}</p>
-          <div style="font-size: 15px; color: #334155;">
-            ${message}
+      <div class="wrapper">
+        <div class="glass-container">
+          <div class="header">
+            <h1>INTERN MANAGEMENT SYSTEM</h1>
           </div>
-        </div>
-        <div class="footer">
-          <p><strong>Intern Management System (IMS) Team</strong></p>
-          <p>This is an automated notification. Please do not reply directly to this mail.</p>
+          <div class="content">
+            <div class="title">${cleanTitle}</div>
+            <div style="font-size: 15px; color: #3b0764;">
+              ${message}
+            </div>
+          </div>
+          <div class="footer">
+            <p><strong>Intern Management System (IMS) Team</strong></p>
+            <p>This is an automated notification. Please do not reply directly to this mail.</p>
+          </div>
         </div>
       </div>
     </body>
@@ -242,13 +279,30 @@ export async function sendEmail(to, subject, html, options = {}) {
     return { success: false, error: 'Missing recipient, subject, or HTML body.' };
   }
 
+  const finalHtml = html.includes('<html') ? html : buildEmailTemplate(subject, html);
+
   const apiKey = process.env.BREVO_API_KEY || process.env.BREVO_KEY || process.env.BREVO_APIKEY;
   if (!apiKey) {
-    console.warn(`[NotificationService] Skipping email to ${to}: BREVO_API_KEY is not configured in environment variables.`);
-    return { success: false, error: 'BREVO_API_KEY missing' };
+    const transporter = getSmtpTransporter();
+    if (transporter) {
+      try {
+        const fromEmail = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'imsnexoresha@gmail.com';
+        const info = await transporter.sendMail({
+          from: `"IMS Notifications" <${fromEmail}>`,
+          to,
+          subject,
+          html: finalHtml,
+        });
+        console.log(`[NotificationService] Email sent to ${to} via SMTP: ${info.messageId}`);
+        return { success: true, messageId: info.messageId };
+      } catch (smtpErr) {
+        console.error(`[NotificationService] Error sending email to ${to} via Nodemailer SMTP:`, smtpErr);
+        return { success: false, error: smtpErr.message };
+      }
+    }
+    console.warn(`[NotificationService] Skipping email to ${to}: Neither BREVO_API_KEY nor Nodemailer EMAIL_PASS is configured.`);
+    return { success: false, error: 'Email transport not configured' };
   }
-
-  const finalHtml = html.includes('<html') ? html : buildEmailTemplate(subject, html);
 
   // Extract plain text from HTML to heavily improve Inbox delivery rates (reduces Spam flags)
   const plainText = finalHtml
