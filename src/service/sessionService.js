@@ -170,7 +170,7 @@ export async function getSessionsByBatch(batchId) {
   if (!batch) {
     throw new CustomError('Batch not found', 404);
   }
-  const sessions = await Session.find({ batchId }).populate('topicIds');
+  const sessions = await Session.find({ batchId }).sort({ sessionDateAndTime: 1 }).populate('topicIds');
   return sessions;
 }
 
