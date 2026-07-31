@@ -6,6 +6,7 @@ import {
     Instructor,
     Role,
     StudentMetrics,
+    Session,
 } from '../models/index.js';
 import { CustomError } from '../../utils/customError.js';
 import { v4 as uuidv4 } from 'uuid';
