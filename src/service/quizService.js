@@ -20,7 +20,16 @@ async function resolveStudent(row) {
 }
 
 export async function createQuizService(data) {
-    return Quiz.create(data);
+    const payload = {
+        ...data,
+        sessionId: data.sessionId || data.lectureId || data.topicId || `sess-${Date.now()}`,
+        link: data.link || data.externalUrl || '',
+        submissionDeadline: data.submissionDeadline ? new Date(data.submissionDeadline) : new Date(Date.now() + 7 * 86400000),
+        totalMarks: Number(data.totalMarks || data.maxScore || 100),
+        passingMarks: Number(data.passingMarks || Math.round((data.totalMarks || data.maxScore || 100) * 0.4)),
+        totaldurationInMins: Number(data.totaldurationInMins || data.durationInMins || 30),
+    };
+    return Quiz.create(payload);
 }
 
 export async function getAllQuizzesService(req) {

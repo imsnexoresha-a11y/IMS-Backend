@@ -11,7 +11,7 @@ const router = Router();
 router.post(
   '/teacher/lectures/:id/attendance',
   verifyToken,
-  requireRole(['teacher', 'instructor']),
+  requireRole(['admin', 'teacher', 'instructor']),
   validateAttendanceRequest,
   uploadAttendance,
 );
@@ -19,7 +19,7 @@ router.post(
 router.get(
   '/teacher/lectures/:id/attendance',
   verifyToken,
-  requireRole(['teacher', 'instructor']),
+  requireRole(['admin', 'teacher', 'instructor']),
   getAttendance,
 );
 

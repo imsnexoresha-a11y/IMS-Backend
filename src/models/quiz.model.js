@@ -14,39 +14,39 @@ const quizSchema = new mongoose.Schema(
     batchId: {
       type: String,
       ref: "Batch",
-      required: true,
+      default: "",
     },
 
     sessionId: {
       type: String,
       ref: "Session",
-      required: true,
+      default: "",
     },
 
     link: {
       type: String,
       trim: true,
-      required: true,
+      default: "",
     },
 
     submissionDeadline: {
       type: Date,
-      required: true,
+      default: () => new Date(Date.now() + 7 * 86400000),
     },
 
     totalMarks: {
       type: Number,
-      required: true,
+      default: 100,
     },
 
     passingMarks: {
       type: Number,
-      required: true,
+      default: 40,
     },
 
     totaldurationInMins: {
       type: Number,
-      required: true,
+      default: 30,
     },
 
     createdBy: {

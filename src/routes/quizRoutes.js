@@ -11,7 +11,7 @@ const router = Router();
 router.post(
     '/teacher/lectures/:id/quiz',
     verifyToken,
-    requireRole(['teacher', 'instructor']),
+    requireRole(['admin', 'teacher', 'instructor']),
     validateQuizUpload,
     quizController.uploadLectureQuizResults,
 );
@@ -19,7 +19,7 @@ router.post(
 router.get(
     '/teacher/lectures/:id/quiz',
     verifyToken,
-    requireRole(['teacher', 'instructor']),
+    requireRole(['admin', 'teacher', 'instructor']),
     quizController.getLectureQuizResults,
 );
 
