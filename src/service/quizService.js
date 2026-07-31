@@ -23,8 +23,21 @@ export async function createQuizService(data) {
     return Quiz.create(data);
 }
 
-export async function getAllQuizzesService() {
-    return Quiz.find().sort({ createdAt: -1 });
+export async function getAllQuizzesService(req) {
+    if (req?.user?.id) {
+        const student = await Student.findOne({
+            $or: [{ _id: req.user.id }, { userId: req.user.id }],
+        }).lean();
+
+        if (student) {
+            if (!student.batchId) {
+                return [];
+            }
+            return Quiz.find({ batchId: student.batchId }).sort({ createdAt: -1 }).lean();
+        }
+    }
+
+    return Quiz.find().sort({ createdAt: -1 }).lean();
 }
 
 export async function getQuizByIdService(id) {

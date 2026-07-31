@@ -22,7 +22,7 @@ export async function createQuiz(req, res, next) {
 
 export async function getAllQuizzes(req, res, next) {
     try {
-        const data = await getAllQuizzesService();
+        const data = await getAllQuizzesService(req);
         res.status(200).json({ success: true, data });
     } catch (error) {
         next(error);

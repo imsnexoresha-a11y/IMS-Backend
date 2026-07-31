@@ -24,7 +24,7 @@ router.get(
 );
 
 router.post('/', validateCreateQuiz, quizController.createQuiz);
-router.get('/', quizController.getAllQuizzes);
+router.get('/', verifyToken, quizController.getAllQuizzes);
 router.get('/:id', quizController.getQuizById);
 router.put('/:id', validateCreateQuiz, quizController.updateQuiz);
 router.delete('/:id', quizController.deleteQuiz);

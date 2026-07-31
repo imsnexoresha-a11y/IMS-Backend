@@ -197,17 +197,19 @@ export async function getStudentDashboard(req) {
     ? { batchId: student.batchId }
     : (student.enrolledCourseIds?.length
         ? { courseId: { $in: student.enrolledCourseIds } }
-        : {});
+        : null);
 
-  const upcomingLectures = await Session.find({
-    ...courseFilter,
-    sessionDateAndTime: { $gte: new Date() },
-    status: { $in: ['scheduled', 'In Progress', 'live'] },
-  })
-    .select('_id title sessionDateAndTime meetUrl status duration')
-    .sort({ sessionDateAndTime: 1 })
-    .limit(5)
-    .lean();
+  const upcomingLectures = courseFilter
+    ? await Session.find({
+        ...courseFilter,
+        sessionDateAndTime: { $gte: new Date() },
+        status: { $in: ['scheduled', 'In Progress', 'live'] },
+      })
+        .select('_id title sessionDateAndTime meetUrl status duration')
+        .sort({ sessionDateAndTime: 1 })
+        .limit(5)
+        .lean()
+    : [];
 
   // Fetch all assignments
   const assignmentQuery = await getAssignmentQueryForStudent(student);
