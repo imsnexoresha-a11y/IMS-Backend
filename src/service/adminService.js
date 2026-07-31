@@ -13,6 +13,7 @@ import bcrypt from 'bcrypt';
 import marksService from './marksService.js';
 import auditService from './auditService.js';
 import * as notificationService from './notificationService.js';
+import { computeBatchStatus, syncBatchStatus, syncBatchesStatus } from '../utils/batchHelper.js';
 
 class AdminService {
     async getOrCreateRole(roleName) {
@@ -383,12 +384,14 @@ class AdminService {
         await this.validateTeachersExist(teacherIds || []);
         await this.validateStudentsExist(studentIds || []);
 
+        const computedStatus = computeBatchStatus(startDate, endDate, status || 'upcoming');
+
         const batch = await Batch.create({
             name,
             description: description || '',
             startDate: startDate || null,
             endDate: endDate || null,
-            status: status || 'upcoming',
+            status: computedStatus,
             teacherIds: teacherIds || [],
             studentIds: studentIds || [],
         });
@@ -408,6 +411,7 @@ class AdminService {
 
     async getBatches() {
         const batches = await Batch.find();
+        await syncBatchesStatus(batches);
 
         return {
             message: 'Batches fetched successfully',
@@ -421,6 +425,8 @@ class AdminService {
         if (!batch) {
             throw new CustomError('Batch not found', 404);
         }
+
+        await syncBatchStatus(batch);
 
         return {
             message: 'Batch fetched successfully',
@@ -485,6 +491,11 @@ class AdminService {
         if (batchData.endDate !== undefined) {
             batch.endDate =
                 batchData.endDate || null;
+        }
+
+        // Dynamically recalculate batch status based on start and end dates unless explicitly set
+        if (batchData.status === undefined || batchData.startDate !== undefined || batchData.endDate !== undefined) {
+            batch.status = computeBatchStatus(batch.startDate, batch.endDate, batch.status);
         }
 
         if (batchData.studentIds !== undefined) {

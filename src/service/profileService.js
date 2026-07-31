@@ -1,5 +1,6 @@
 import { Instructor, User, Session, Attendance, Quiz, QuizResult, Course, Student, StudentLedger, Assignment, AssignmentSubmission, AssignmentResult, Batch } from '../models/index.js';
 import { CustomError } from '../../utils/customError.js';
+import { syncBatchesStatus } from '../utils/batchHelper.js';
 
 /**
  * Get instructor profile populated with user details (auto-creates profile if missing for teacher user).
@@ -160,6 +161,8 @@ export async function getInstructorBatches(userId) {
   if (batches.length === 0) {
     batches = await Batch.find().lean();
   }
+
+  await syncBatchesStatus(batches);
 
   return batches;
 }
