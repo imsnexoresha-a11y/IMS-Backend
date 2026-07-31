@@ -117,8 +117,8 @@ async function refresh(refreshToken) {
 }
 
 async function changePassword(userId, { currentPassword, newPassword, otp }) {
-    if (!currentPassword || !newPassword || !otp) {
-        throw new CustomError('currentPassword, newPassword, and otp are required', 400);
+    if (!currentPassword || !newPassword) {
+        throw new CustomError('Current password and new password are required', 400);
     }
 
     if (newPassword.length < 6) {
@@ -137,20 +137,23 @@ async function changePassword(userId, { currentPassword, newPassword, otp }) {
         throw new CustomError('Current password is incorrect', 400);
     }
 
-    // Verify OTP (case-insensitive email matching)
-    const { Otp } = await import('../models/index.js');
-    const normalizedUserEmail = user.email.toLowerCase().trim();
-    const cleanOtp = String(otp).trim();
+    // Verify OTP if provided
+    if (otp) {
+        const { Otp } = await import('../models/index.js');
+        const normalizedUserEmail = user.email.toLowerCase().trim();
+        const cleanOtp = String(otp).trim();
 
-    const record = await Otp.findOne({ 
-      email: { $regex: new RegExp(`^${normalizedUserEmail}$`, 'i') }, 
-      otp: cleanOtp, 
-      type: 'change_password', 
-      expiresAt: { $gt: new Date() } 
-    });
+        const record = await Otp.findOne({ 
+          email: { $regex: new RegExp(`^${normalizedUserEmail}$`, 'i') }, 
+          otp: cleanOtp, 
+          type: 'change_password', 
+          expiresAt: { $gt: new Date() } 
+        });
 
-    if (!record) {
-        throw new CustomError('Invalid or expired OTP', 400);
+        if (!record) {
+            throw new CustomError('Invalid or expired OTP', 400);
+        }
+        await Otp.deleteMany({ email: { $regex: new RegExp(`^${normalizedUserEmail}$`, 'i') }, type: 'change_password' }); // clear OTPs
     }
 
     user.password = await bcrypt.hash(newPassword, 10);
@@ -158,6 +161,9 @@ async function changePassword(userId, { currentPassword, newPassword, otp }) {
     user.tokenVersion += 1;
 
     await user.save();
+    await user.populate('roleId');
+    const roleName = user.roleId?.name;
+
     await Otp.deleteMany({ email: { $regex: new RegExp(`^${normalizedUserEmail}$`, 'i') }, type: 'change_password' }); // clear OTPs
 
     // Send confirmation email
@@ -170,6 +176,8 @@ async function changePassword(userId, { currentPassword, newPassword, otp }) {
 
     return {
         message: 'Password changed successfully',
+        accessToken: signAccessToken(user, roleName),
+        refreshToken: signRefreshToken(user),
     };
 }
 
@@ -291,6 +299,9 @@ async function resetPassword({ email, otp, newPassword, type = 'forgot_password'
     user.passwordChangedAt = new Date();
     user.tokenVersion += 1;
     await user.save();
+    await user.populate('roleId');
+
+    const roleName = user.roleId?.name;
 
     await Otp.deleteMany({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') }, type }); // clear OTPs
 
@@ -301,7 +312,11 @@ async function resetPassword({ email, otp, newPassword, type = 'forgot_password'
         `<p>Hello ${user.name},</p><p>Your password has been changed successfully. If you did not do this, please contact support immediately.</p>`
     );
 
-    return { message: 'Password reset successfully' };
+    return { 
+        message: 'Password reset successfully',
+        accessToken: signAccessToken(user, roleName),
+        refreshToken: signRefreshToken(user),
+    };
 }
 
 export default {
