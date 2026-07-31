@@ -44,8 +44,16 @@ const auditLogSchema = new mongoose.Schema(
             required: true,
             trim: true,
         },
+
+        createdAt: {
+            type: Date,
+            default: Date.now,
+        },
     },
-    schemaOptions,
+    {
+        ...schemaOptions,
+        timestamps: true,
+    },
 );
 
 export default mongoose.models.AuditLog || mongoose.model('AuditLog', auditLogSchema);

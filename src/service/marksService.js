@@ -112,6 +112,7 @@ async function writeAudit({
     oldValue: oldValue ?? null,
     newValue: newValue ?? null,
     reason,
+    createdAt: new Date(),
   });
 }
 

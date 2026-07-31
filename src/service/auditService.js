@@ -1,4 +1,4 @@
-import { AuditLog } from '../models/index.js';
+import { AuditLog, Batch, Student, User } from '../models/index.js';
 import { CustomError } from '../../utils/customError.js';
 
 const DEFAULT_PAGE = 1;
@@ -39,6 +39,47 @@ function buildFilter({ from, to, adminId, actionType }) {
     return filter;
 }
 
+async function enrichLogs(rawLogs) {
+    return Promise.all(rawLogs.map(async (log) => {
+        let adminName = 'Admin';
+        if (log.adminId) {
+            if (typeof log.adminId === 'object' && log.adminId.name) {
+                adminName = log.adminId.name;
+            } else {
+                const u = await User.findById(log.adminId).lean();
+                if (u) adminName = u.name;
+            }
+        }
+
+        let entityName = log.entityId || '—';
+        if (log.newValue?.batchName) {
+            entityName = log.newValue.batchName;
+        } else if (log.oldValue?.batchName) {
+            entityName = log.oldValue.batchName;
+        } else if (log.newValue?.studentName) {
+            entityName = log.newValue.studentName;
+        } else if (log.oldValue?.studentName) {
+            entityName = log.oldValue.studentName;
+        } else if (log.entityType === 'batch' && log.entityId) {
+            const b = await Batch.findById(log.entityId).lean();
+            if (b) entityName = b.name;
+        } else if (log.entityType === 'student' && log.entityId) {
+            const s = await Student.findById(log.entityId).lean();
+            if (s) {
+                const u = await User.findById(s.userId).lean();
+                if (u) entityName = u.name;
+            }
+        }
+
+        return {
+            ...log,
+            createdAt: log.createdAt || log.timestamp || null,
+            adminName,
+            entityName,
+        };
+    }));
+}
+
 // GET /api/v1/admin/audit-log
 async function getAuditLogs(query) {
     const filter = buildFilter(query);
@@ -47,14 +88,17 @@ async function getAuditLogs(query) {
     const limit = Math.min(Math.max(Number(query.limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
     const skip = (page - 1) * limit;
 
-    const [logs, total] = await Promise.all([
+    const [rawLogs, total] = await Promise.all([
         AuditLog.find(filter)
-            .sort({ createdAt: -1 })
+            .populate('adminId', 'name email')
+            .sort({ createdAt: -1, _id: -1 })
             .skip(skip)
             .limit(limit)
             .lean(),
         AuditLog.countDocuments(filter),
     ]);
+
+    const logs = await enrichLogs(rawLogs);
 
     return {
         message: 'Audit logs fetched successfully',
@@ -72,7 +116,12 @@ async function getAuditLogs(query) {
 async function exportAuditLogs(query) {
     const filter = buildFilter(query);
 
-    const logs = await AuditLog.find(filter).sort({ createdAt: -1 }).lean();
+    const rawLogs = await AuditLog.find(filter)
+        .populate('adminId', 'name email')
+        .sort({ createdAt: -1, _id: -1 })
+        .lean();
+
+    const logs = await enrichLogs(rawLogs);
 
     return {
         message: 'Audit log export generated successfully',
@@ -96,6 +145,7 @@ async function createAuditLog({ adminId, actionType, entityType, entityId, oldVa
         oldValue: oldValue ?? null,
         newValue: newValue ?? null,
         reason,
+        createdAt: new Date(),
     });
 
     return {
