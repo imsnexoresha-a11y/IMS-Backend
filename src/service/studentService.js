@@ -324,14 +324,12 @@ export async function getMarkHistory(req) {
 export async function getStudentProfile(req) {
   const studentId = getStudentId(req);
 
-  const [student, user] = await Promise.all([
-    Student.findOne({ $or: [{ _id: studentId }, { userId: studentId }] }).populate('batchId', 'name').lean(),
-    User.findById(studentId).select('-password').lean(),
-  ]);
-
+  const student = await Student.findOne({ $or: [{ _id: studentId }, { userId: studentId }] }).populate('batchId', 'name').lean();
   if (!student) {
     throw new CustomError('Student not found', 404);
   }
+
+  const user = await User.findById(student.userId).select('-password').lean();
 
   return {
     ...student,
@@ -382,9 +380,9 @@ export async function updateStudentProfile(req) {
     throw new CustomError('Student not found', 404);
   }
 
-  let user = await User.findById(studentId).select('-password').lean();
+  let user = await User.findById(student.userId).select('-password').lean();
   if (Object.keys(userUpdate).length) {
-    user = await User.findByIdAndUpdate(studentId, userUpdate, {
+    user = await User.findByIdAndUpdate(student.userId, userUpdate, {
       new: true,
       runValidators: true,
     })
@@ -591,14 +589,13 @@ export async function getStudentPortfolio(req) {
 async function getStudentPortfolioProfile(req) {
   const studentId = getStudentId(req);
 
-  const [student, user] = await Promise.all([
-    Student.findOne({ $or: [{ _id: studentId }, { userId: studentId }] }).lean(),
-    User.findById(studentId).select('-password').lean(),
-  ]);
+  const student = await Student.findOne({ $or: [{ _id: studentId }, { userId: studentId }] }).lean();
 
   if (!student) {
     throw new CustomError('Student not found', 404);
   }
+
+  const user = await User.findById(student.userId).select('-password').lean();
 
   return {
     ...student,
