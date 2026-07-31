@@ -5,6 +5,7 @@ import {
     manualScore,
     recalculateStudent,
     recalculateBatch,
+    getStudentLedgerEvents,
 } from '../controller/marks.controller.js';
 import {
     validateOverrideMarks,
@@ -19,6 +20,7 @@ const router = express.Router();
 
 router.use(verifyToken, requireRole('admin'));
 
+router.get('/ledger/:studentId', getStudentLedgerEvents);
 router.post('/override', validateOverrideMarks, overrideMarks);
 router.post('/event-correction', validateEventCorrection, correctLedgerEvent);
 router.post('/manual-score', validateManualScore, manualScore);

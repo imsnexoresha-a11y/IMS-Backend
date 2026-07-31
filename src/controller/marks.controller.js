@@ -65,10 +65,24 @@ async function recalculateBatch(req, res, next) {
     }
 }
 
+async function getStudentLedgerEvents(req, res, next) {
+    try {
+        const events = await marksService.getStudentLedgerEvents(req.params.studentId);
+        res.status(200).json({
+            success: true,
+            message: 'Student ledger events retrieved successfully',
+            data: events,
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
 export {
     overrideMarks,
     correctLedgerEvent,
     manualScore,
     recalculateStudent,
     recalculateBatch,
+    getStudentLedgerEvents,
 };

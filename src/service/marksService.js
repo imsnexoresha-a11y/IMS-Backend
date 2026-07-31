@@ -464,6 +464,14 @@ async function recalculateBatch(batchId, reason, adminId) {
   };
 }
 
+async function getStudentLedgerEvents(studentId) {
+  const { StudentLedger } = await import('../models/index.js');
+  const entries = await StudentLedger.find({ studentId, deletedAt: null })
+    .sort({ createdAt: -1 })
+    .lean();
+  return entries;
+}
+
 export {
   applyMarkEvent,
   reverseAndCorrect,
@@ -472,6 +480,7 @@ export {
   manualScore,
   recalculateStudent,
   recalculateBatch,
+  getStudentLedgerEvents,
 };
 
 export default {
@@ -482,4 +491,5 @@ export default {
   manualScore,
   recalculateStudent,
   recalculateBatch,
+  getStudentLedgerEvents,
 };
