@@ -164,17 +164,52 @@ export async function getInstructorBatches(userId) {
 
   await syncBatchesStatus(batches);
 
-  return batches;
+  const enrichedBatches = await Promise.all(
+    batches.map(async (batch) => {
+      const realStudents = await Student.find({
+        $or: [
+          { batchId: batch._id },
+          { _id: { $in: batch.studentIds || [] } },
+        ],
+      }).select('_id');
+
+      const studentCount = realStudents.length;
+      const lectureCount = await Session.countDocuments({ batchId: batch._id });
+
+      return {
+        ...batch,
+        studentCount,
+        lectureCount,
+      };
+    })
+  );
+
+  return enrichedBatches;
 }
 
 /**
  * Retrieve students enrolled in a batch along with their ledger details.
  */
 export async function getStudentBreakdown(batchId) {
-  const students = await Student.find({ batchId }).populate({
+  const batch = await Batch.findById(batchId).lean();
+  const studentIdsFromBatch = Array.isArray(batch?.studentIds) ? batch.studentIds : [];
+
+  const students = await Student.find({
+    $or: [
+      { batchId: batchId },
+      { _id: { $in: studentIdsFromBatch } },
+    ],
+  }).populate({
     path: 'userId',
     select: 'name email profileStatus',
   });
+
+  // Auto-sync student batchId in database if out of sync
+  for (const s of students) {
+    if (s.batchId !== batchId) {
+      await Student.updateOne({ _id: s._id }, { batchId });
+    }
+  }
 
   const studentIds = students.map((s) => s._id);
 
@@ -184,7 +219,7 @@ export async function getStudentBreakdown(batchId) {
   }).sort({ createdAt: -1 });
 
   const studentsWithBreakdown = students.map((student) => {
-    const studentLedger = ledgerEntries.filter((entry) => entry.studentId === student._id);
+    const studentLedger = ledgerEntries.filter((entry) => String(entry.studentId) === String(student._id));
     return {
       student,
       ledger: studentLedger,

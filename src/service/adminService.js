@@ -410,12 +410,32 @@ class AdminService {
     }
 
     async getBatches() {
-        const batches = await Batch.find();
+        const batches = await Batch.find().lean();
         await syncBatchesStatus(batches);
+
+        const enrichedBatches = await Promise.all(
+            batches.map(async (batch) => {
+                const realStudents = await Student.find({
+                    $or: [
+                        { batchId: batch._id },
+                        { _id: { $in: batch.studentIds || [] } },
+                    ],
+                }).select('_id');
+
+                const studentCount = realStudents.length;
+                const lectureCount = await Session.countDocuments({ batchId: batch._id });
+
+                return {
+                    ...batch,
+                    studentCount,
+                    lectureCount,
+                };
+            })
+        );
 
         return {
             message: 'Batches fetched successfully',
-            batches,
+            batches: enrichedBatches,
         };
     }
 
@@ -428,9 +448,24 @@ class AdminService {
 
         await syncBatchStatus(batch);
 
+        const batchObj = batch.toObject ? batch.toObject() : batch;
+        const realStudents = await Student.find({
+            $or: [
+                { batchId: batchObj._id },
+                { _id: { $in: batchObj.studentIds || [] } },
+            ],
+        }).select('_id');
+
+        const studentCount = realStudents.length;
+        const lectureCount = await Session.countDocuments({ batchId: batchObj._id });
+
         return {
             message: 'Batch fetched successfully',
-            batch,
+            batch: {
+                ...batchObj,
+                studentCount,
+                lectureCount,
+            },
         };
     }
 

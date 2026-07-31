@@ -181,8 +181,20 @@ export async function createTopic(topicData) {
  * Get curriculum topics for a specific batch, sorted by orderIndex.
  */
 export async function getTopicsByBatch(batchId) {
-  const topics = await Topic.find({ batchId }).sort({ orderIndex: 1 });
-  return topics;
+  const topics = await Topic.find({ batchId }).sort({ orderIndex: 1 }).lean();
+  const sessions = await Session.find({ batchId }).select('_id topicId topicIds').lean();
+
+  return topics.map((t) => {
+    const tid = String(t._id);
+    const linkedSessions = sessions.filter(
+      (s) => String(s.topicId) === tid || (Array.isArray(s.topicIds) && s.topicIds.map(String).includes(tid))
+    );
+    return {
+      ...t,
+      lectureCount: linkedSessions.length,
+      notesCount: t.notesFiles?.length || t.notes?.length || 0,
+    };
+  });
 }
 
 /**
