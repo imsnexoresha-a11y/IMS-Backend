@@ -13,6 +13,9 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// Trust reverse proxy headers (Render / Vercel / Cloudflare) so req.ip tracks real client IPs
+app.set('trust proxy', 1);
+
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
   : null;
@@ -36,7 +39,9 @@ app.use(morgan('dev'));
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 100,
+    limit: Number(process.env.RATE_LIMIT_MAX) || 1500,
+    standardHeaders: true,
+    legacyHeaders: false,
   }),
 );
 
