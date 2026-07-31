@@ -23,6 +23,10 @@ router.use('/recruiter', recruiterRoutes);
 router.use('/attendance', attendanceRoutes);
 router.use('/quizzes', quizRoutes);
 
+// Root level mounts for /teacher/lectures/:id/attendance and /teacher/lectures/:id/quiz
+router.use('/', attendanceRoutes);
+router.use('/', quizRoutes);
+
 router.use('/admin', adminRoutes);
 router.use('/admin/audit-log', auditRoutes);
 router.use('/admin/marks', marksRoutes);

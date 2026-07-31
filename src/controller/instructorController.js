@@ -16,9 +16,14 @@ let storage;
 if (isCloudinaryConfigured) {
   storage = new CloudinaryStorage({
     cloudinary: cloudinary,
-    params: {
-      folder: 'curriculum_notes',
-      resource_type: 'raw',
+    params: async (req, file) => {
+      const cleanOriginalName = path.parse(file.originalname).name.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const ext = path.extname(file.originalname);
+      return {
+        folder: 'curriculum_notes',
+        public_id: `${cleanOriginalName}_${Date.now()}${ext}`,
+        resource_type: 'raw',
+      };
     },
   });
 } else {
@@ -29,8 +34,8 @@ if (isCloudinaryConfigured) {
   storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadDir),
     filename: (req, file, cb) => {
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-      cb(null, uniqueSuffix + '-' + file.originalname);
+      const cleanOriginalName = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
+      cb(null, `${Date.now()}_${cleanOriginalName}`);
     }
   });
 }

@@ -1,4 +1,4 @@
-import { Session, Assignment, Batch, Course, Topic, Instructor, Notification } from '../models/index.js';
+import { Session, Assignment, Batch, Course, Topic, Instructor, Notification, Attendance, Quiz, QuizResult, AssignmentSubmission, AssignmentResult } from '../models/index.js';
 import { CustomError } from '../../utils/customError.js';
 import * as notificationService from './notificationService.js';
 
@@ -217,8 +217,55 @@ export async function getSessionsByBatch(batchId) {
   if (!batch) {
     throw new CustomError('Batch not found', 404);
   }
-  const sessions = await Session.find({ batchId }).sort({ sessionDateAndTime: 1 }).populate('topicIds');
-  return sessions;
+  const sessions = await Session.find({ batchId }).sort({ sessionDateAndTime: 1 }).populate('topicIds').lean();
+
+  const enrichedSessions = await Promise.all(
+    sessions.map(async (s) => {
+      const sessionId = s._id.toString();
+
+      // Attendance
+      const attendanceRecords = await Attendance.find({
+        $or: [{ sessionId }, { lectureId: sessionId }]
+      }).lean();
+      const presentCount = attendanceRecords.filter(a => a.status === 'present' || a.first_half || a.second_half).length;
+      const attendanceCount = attendanceRecords.length > 0 ? `${presentCount}/${attendanceRecords.length}` : null;
+
+      // Quiz
+      const quizResults = await QuizResult.find({
+        $or: [{ sessionId }, { lectureId: sessionId }, { quizId: sessionId }]
+      }).lean();
+      let avgQuizScore = null;
+      if (quizResults.length > 0) {
+        const sum = quizResults.reduce((acc, curr) => acc + (curr.marksObtained ?? curr.score ?? 0), 0);
+        avgQuizScore = Math.round((sum / quizResults.length) * 10) / 10;
+      }
+
+      // Assignment
+      const assignment = await Assignment.findOne({ $or: [{ sessionId }, { lectureId: sessionId }] }).lean();
+      let avgAssignmentScore = null;
+      if (assignment) {
+        const submissions = await AssignmentSubmission.find({ assignmentId: assignment._id }).lean();
+        const subIds = submissions.map(sub => sub._id);
+        if (subIds.length > 0) {
+          const assignResults = await AssignmentResult.find({ submissionId: { $in: subIds } }).lean();
+          if (assignResults.length > 0) {
+            const sum = assignResults.reduce((acc, curr) => acc + (curr.marksObtained || 0), 0);
+            avgAssignmentScore = Math.round((sum / assignResults.length) * 10) / 10;
+          }
+        }
+      }
+
+      return {
+        ...s,
+        id: s._id,
+        attendanceCount,
+        avgQuizScore,
+        avgAssignmentScore,
+      };
+    })
+  );
+
+  return enrichedSessions;
 }
 
 /**

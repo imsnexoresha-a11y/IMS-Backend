@@ -17,6 +17,12 @@ const instructorSchema = new mongoose.Schema(
       trim: true,
     },
 
+    specialization: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
     bio: {
       type: String,
       default: "",

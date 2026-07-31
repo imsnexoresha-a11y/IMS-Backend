@@ -45,7 +45,7 @@ export async function updateInstructorProfile(userId, updateData, profileImagePa
     });
   }
 
-  const { name, phone, designation, bio, linkedInUrl } = updateData;
+  const { name, phone, designation, specialization, bio, linkedInUrl } = updateData;
 
   if (name || phone) {
     const userUpdates = {};
@@ -55,6 +55,7 @@ export async function updateInstructorProfile(userId, updateData, profileImagePa
   }
 
   if (designation !== undefined) instructor.designation = designation;
+  if (specialization !== undefined) instructor.specialization = specialization;
   if (bio !== undefined) instructor.bio = bio;
   if (linkedInUrl !== undefined) instructor.linkedInUrl = linkedInUrl;
   if (profileImagePath !== undefined) instructor.profileImage = profileImagePath;
@@ -82,48 +83,55 @@ export async function getInstructorDashboard(userId) {
   }
 
   const instructorIds = [instructor._id, userId];
+  const assignedBatchIds = Array.isArray(instructor.assignedBatches) ? instructor.assignedBatches : [];
 
-  // 1. Upcoming / Active Sessions
+  const sessionFilter = {
+    $or: [
+      { instructorId: { $in: instructorIds } },
+      { batchId: { $in: assignedBatchIds } },
+    ],
+  };
+
+  // 1. Upcoming / Active Sessions for this instructor
   const upcomingSessions = await Session.find({
-    instructorId: { $in: instructorIds },
-    status: { $in: ['scheduled', 'Scheduled', 'in_progress', 'In Progress'] },
+    ...sessionFilter,
+    status: { $in: ['scheduled', 'Scheduled', 'in_progress', 'In Progress', 'live'] },
   }).sort({ sessionDateAndTime: 1 }).lean();
 
-  // Fetch all completed sessions for this instructor
+  // 2. Completed sessions for this instructor
   const completedSessions = await Session.find({
-    instructorId: { $in: instructorIds },
+    ...sessionFilter,
     status: { $in: ['completed', 'Completed'] },
   }).lean();
 
-  // Fallback to all sessions if none found for specific instructor ID
-  const allUpcoming = upcomingSessions.length > 0 ? upcomingSessions : await Session.find({
-    status: { $in: ['scheduled', 'Scheduled', 'in_progress', 'In Progress'] }
-  }).sort({ sessionDateAndTime: 1 }).lean();
-
-  const allCompleted = completedSessions.length > 0 ? completedSessions : await Session.find({
-    status: { $in: ['completed', 'Completed'] }
-  }).lean();
-
-  // 2. Pending Attendance Uploads
+  // 3. Pending Attendance Uploads
   const pendingAttendance = [];
-  for (const session of allCompleted) {
-    const attendanceExists = await Attendance.exists({ sessionId: session._id });
+  for (const session of completedSessions) {
+    const attendanceExists = await Attendance.exists({
+      $or: [{ sessionId: session._id }, { lectureId: session._id }]
+    });
     if (!attendanceExists) {
       pendingAttendance.push(session);
     }
   }
 
-  // 3. Pending Quiz Uploads
+  // 4. Pending Quiz Uploads
   const pendingQuiz = [];
-  for (const session of allCompleted) {
-    const quizExists = await Quiz.exists({ sessionId: session._id });
-    if (!quizExists) {
+  for (const session of completedSessions) {
+    const quizExists = await Quiz.exists({
+      $or: [{ sessionId: session._id }, { lectureId: session._id }]
+    });
+    const quizResultExists = await QuizResult.exists({
+      $or: [{ sessionId: session._id }, { lectureId: session._id }, { quizId: session._id }]
+    });
+
+    if (!quizExists && !quizResultExists) {
       pendingQuiz.push(session);
     }
   }
 
   return {
-    upcomingSessions: allUpcoming,
+    upcomingSessions,
     pendingAttendance,
     pendingQuiz,
   };
@@ -239,7 +247,10 @@ export async function getSessionSummary(sessionId) {
   }
 
   // 1. Attendance Metrics
-  const attendanceRecords = await Attendance.find({ sessionId });
+  const attendanceRecords = await Attendance.find({
+    $or: [{ sessionId }, { lectureId: sessionId }]
+  }).lean();
+
   const attendanceCounts = {
     present: 0,
     absent: 0,
@@ -247,34 +258,50 @@ export async function getSessionSummary(sessionId) {
     half: 0,
     total: attendanceRecords.length,
   };
+
   for (const record of attendanceRecords) {
-    if (attendanceCounts[record.status] !== undefined) {
-      attendanceCounts[record.status]++;
+    let st = record.status;
+    if (!st) {
+      if (record.first_half && record.second_half) st = 'present';
+      else if (record.first_half || record.second_half) st = 'half';
+      else st = 'absent';
+    }
+    if (attendanceCounts[st] !== undefined) {
+      attendanceCounts[st]++;
     }
   }
 
   // 2. Average Quiz Score
   let avgQuizScore = 0;
-  const quiz = await Quiz.findOne({ sessionId });
-  if (quiz) {
-    const quizResults = await QuizResult.find({ quizId: quiz._id });
-    if (quizResults.length > 0) {
-      const sum = quizResults.reduce((acc, curr) => acc + (curr.marksObtained || 0), 0);
-      avgQuizScore = sum / quizResults.length;
+  const quizResults = await QuizResult.find({
+    $or: [{ sessionId }, { lectureId: sessionId }, { quizId: sessionId }]
+  }).lean();
+
+  if (quizResults.length > 0) {
+    const sum = quizResults.reduce((acc, curr) => acc + (curr.marksObtained ?? curr.score ?? 0), 0);
+    avgQuizScore = Math.round((sum / quizResults.length) * 10) / 10;
+  } else {
+    const quiz = await Quiz.findOne({ $or: [{ sessionId }, { lectureId: sessionId }] }).lean();
+    if (quiz) {
+      const results = await QuizResult.find({ quizId: quiz._id }).lean();
+      if (results.length > 0) {
+        const sum = results.reduce((acc, curr) => acc + (curr.marksObtained ?? curr.score ?? 0), 0);
+        avgQuizScore = Math.round((sum / results.length) * 10) / 10;
+      }
     }
   }
 
   // 3. Average Assignment Score
   let avgAssignmentScore = 0;
-  const assignment = await Assignment.findOne({ sessionId });
+  const assignment = await Assignment.findOne({ $or: [{ sessionId }, { lectureId: sessionId }] }).lean();
   if (assignment) {
-    const submissions = await AssignmentSubmission.find({ assignmentId: assignment._id });
+    const submissions = await AssignmentSubmission.find({ assignmentId: assignment._id }).lean();
     const submissionIds = submissions.map((s) => s._id);
     if (submissionIds.length > 0) {
-      const results = await AssignmentResult.find({ submissionId: { $in: submissionIds } });
+      const results = await AssignmentResult.find({ submissionId: { $in: submissionIds } }).lean();
       if (results.length > 0) {
         const sum = results.reduce((acc, curr) => acc + (curr.marksObtained || 0), 0);
-        avgAssignmentScore = sum / results.length;
+        avgAssignmentScore = Math.round((sum / results.length) * 10) / 10;
       }
     }
   }
