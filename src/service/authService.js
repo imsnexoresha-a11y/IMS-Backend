@@ -137,10 +137,11 @@ async function changePassword(userId, { currentPassword, newPassword, otp }) {
         throw new CustomError('Current password is incorrect', 400);
     }
 
+    const normalizedUserEmail = user.email ? user.email.toLowerCase().trim() : '';
+
     // Verify OTP if provided
     if (otp) {
         const { Otp } = await import('../models/index.js');
-        const normalizedUserEmail = user.email.toLowerCase().trim();
         const cleanOtp = String(otp).trim();
 
         const record = await Otp.findOne({ 
@@ -164,15 +165,17 @@ async function changePassword(userId, { currentPassword, newPassword, otp }) {
     await user.populate('roleId');
     const roleName = user.roleId?.name;
 
-    await Otp.deleteMany({ email: { $regex: new RegExp(`^${normalizedUserEmail}$`, 'i') }, type: 'change_password' }); // clear OTPs
-
     // Send confirmation email
-    const { sendEmail } = await import('./notificationService.js');
-    await sendEmail(
-        user.email,
-        'Password Changed Successfully',
-        `<p>Hello ${user.name},</p><p>Your password was successfully updated via your Profile. If you did not make this change, please contact support immediately.</p>`
-    );
+    try {
+        const { sendEmail } = await import('./notificationService.js');
+        await sendEmail(
+            user.email,
+            'Password Changed Successfully',
+            `<p>Hello ${user.name},</p><p>Your password was successfully updated via your Profile. If you did not make this change, please contact support immediately.</p>`
+        );
+    } catch (emailErr) {
+        console.error('[AuthService] Confirmation email error:', emailErr);
+    }
 
     return {
         message: 'Password changed successfully',
