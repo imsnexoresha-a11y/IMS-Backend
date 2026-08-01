@@ -8,15 +8,24 @@ const studentPopulateForRecruiter = [
 ];
 
 async function getActiveRecruiterBatch(batchUuid) {
-  const batch = await Batch.findOne({
-    recruiterUuid: batchUuid,
+  let batch = await Batch.findOne({
+    $or: [
+      { recruiterUuid: batchUuid },
+      { _id: batchUuid.match(/^[0-9a-fA-F]{24}$/) ? batchUuid : null }
+    ].filter(Boolean),
     recruiterLinkActive: true,
   })
     .select('_id name description startDate endDate recruiterUuid recruiterLinkActive status')
     .lean();
 
+  if (!batch && batchUuid.match(/^[0-9a-fA-F]{24}$/)) {
+    batch = await Batch.findById(batchUuid)
+      .select('_id name description startDate endDate recruiterUuid recruiterLinkActive status')
+      .lean();
+  }
+
   if (!batch) {
-    throw new CustomError('Batch not found', 404);
+    throw new CustomError('Batch not found or recruiter link inactive', 404);
   }
 
   return batch;
@@ -90,6 +99,8 @@ export async function getStudentPortfolioService(batchUuid, studentId) {
 
   let attendance = null;
   let overallScore = null;
+  let assignmentAvg = 0;
+  let quizAvg = 0;
 
   try {
     attendance = await metricsService.getAttendanceRate(studentId, batch._id);
@@ -101,6 +112,20 @@ export async function getStudentPortfolioService(batchUuid, studentId) {
     overallScore = await metricsService.getTotalScore(studentId);
   } catch {
     overallScore = student.totalPoints || 0;
+  }
+
+  try {
+    const rawAssignScore = await metricsService.getAssignmentAvgScore(studentId);
+    assignmentAvg = Math.round(rawAssignScore <= 10 ? rawAssignScore * 10 : rawAssignScore);
+  } catch {
+    assignmentAvg = 0;
+  }
+
+  try {
+    const rawQuizScore = await metricsService.getQuizAvgScore(studentId);
+    quizAvg = Math.round(rawQuizScore <= 5 ? (rawQuizScore / 5) * 100 : rawQuizScore);
+  } catch {
+    quizAvg = 0;
   }
 
   const course = student.enrolledCourseIds?.[0]?.name || null;
@@ -117,6 +142,8 @@ export async function getStudentPortfolioService(batchUuid, studentId) {
       status: student.userId?.profileStatus || student.status || null,
       attendance,
       overallScore,
+      assignmentAvg,
+      quizAvg,
       course,
       totalPoints: student.totalPoints || 0,
     },
