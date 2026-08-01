@@ -23,11 +23,11 @@ router.get(
     quizController.getLectureQuizResults,
 );
 
-router.post('/', validateCreateQuiz, quizController.createQuiz);
+router.post('/', verifyToken, requireRole(['admin', 'teacher', 'instructor']), validateCreateQuiz, quizController.createQuiz);
 router.get('/', verifyToken, quizController.getAllQuizzes);
 router.get('/:id', quizController.getQuizById);
-router.put('/:id', validateCreateQuiz, quizController.updateQuiz);
-router.delete('/:id', quizController.deleteQuiz);
+router.put('/:id', verifyToken, requireRole(['admin', 'teacher', 'instructor']), validateCreateQuiz, quizController.updateQuiz);
+router.delete('/:id', verifyToken, requireRole(['admin', 'teacher', 'instructor']), quizController.deleteQuiz);
 
 router.post(
     '/upload-results',
